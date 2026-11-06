@@ -1,0 +1,24 @@
+name: Publish Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify
+        shell: pwsh
+        run: |
+          ./build.ps1
+          ./verify.ps1
+          $versionFile = Join-Path $PWD 'test-output/version.txt'
+          $app = Start-Process -FilePath './bin/SoulsRevive.exe' -ArgumentList @('--version-file', ('"' + $versionFile + '"')) -Wait -PassThru -WindowStyle Hidden
+          if ($app.ExitCode -ne 0 -or (Get-Content $versionFile -Raw).Trim() -ne $env:GITHUB_REF_NAME.TrimStart('v')) { throw 'Release tag must match AssemblyVersion in src/Experience.cs.' }
+      - name: Publish installer and portable app
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create $env:GITHUB_REF_NAME ./bin/SoulsRevive.exe ./bin/SoulRevive-Setup.exe ./bin/SHA256SUMS.txt --verify-tag --generate-notes --title "Soul Revive $env:GITHUB_REF_NAME"

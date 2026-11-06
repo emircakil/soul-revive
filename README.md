@@ -1,55 +1,66 @@
-# Soul Revive — Windows Break Reminder & Pixel Art Desktop Companion
+# Soul Revive 1.1 — Pixel Bonfire Desktop Companion
 
-A Dark Souls-inspired Windows break reminder with an animated pixel art knight and bonfire. Customize your work and movement intervals, watch your knight's health fade as you work, and rekindle the fire with a movement break.
+A small Windows work and break companion with an original pixel knight, a bonfire, a changing sky, and an offline soundscape. Available in Türkçe and English.
 
-Built for developers, gamers, and anyone spending long sessions at a desk, Soul Revive brings a small desktop companion to your workday. It runs offline using .NET Framework 4.x and stores your settings locally.
+## Install
 
-## Features
+Download **SoulRevive-Setup.exe** from [Releases](https://github.com/emircakil/soul-revive/releases), open it, and select **Kur ve başlat / Install and launch**. No Git, PowerShell commands, development tools, or administrator privileges are needed by users. Setup offers desktop and Windows startup shortcuts and adds the app to Windows Installed Apps.
 
-- **Animated pixel art companion** with breathing, walking, a wind-blown cape, and a flickering bonfire.
-- **Customizable break timer** with 1–180 minute work sessions and 1–30 minute movement breaks.
-- **Health-based reminders** that turn your next movement break into a chance to restore your knight.
-- **Windows notifications and optional sound** when a work session or break ends.
-- **System tray controls**, a draggable window, and an always-on-top option.
-- **Automatic startup** at Windows sign-in, configurable in Settings.
-- **Pause on screen lock or sleep**, with manual resume when you return.
-- **English and Turkish localization**, selectable in Settings.
-- **Daily break statistics** and locally saved timer progress.
+Setup installs to `%LOCALAPPDATA%\SoulsRevive`. Upgrades keep settings, statistics, and the existing startup preference. For portable use, run **SoulsRevive.exe** directly.
 
-## Quick start
+## Your bonfire
 
-On Windows, open PowerShell in the project folder and run
+- **Çalışıyorum / Working:** every work round begins at dawn, moves through daylight and sunset, and ends after dark. The default round is 30 minutes, followed by a 3-minute break. Choose work durations of 1–180 minutes and breaks of 1–30 minutes in Settings.
+- **Mola ver / Take a break:** your knight lies down beside the fire and sleeps, with breathing and floating Z animations. Stand up, walk, or stretch while the timer runs. Completing a break restores health and starts a new dawn. Returning early starts a fresh work round without awarding a completed break.
+- **Çalışmıyorum / Chill mode:** the scene follows your computer's local time. The knight alternates between wandering and resting by the fire. The work timer and work statistics stop. Returning to Working starts a new round at dawn.
+- **Duraklat / Pause:** freezes the timer and work statistics. Screen lock, sleep, or a long timer gap also pauses work. Resume manually when you return.
+- Drag the window to move it. The title-bar **=** opens Settings. **_ / X** hide it to the tray; the timer continues. Double-click the tray bonfire to reveal it, or right-click and choose **Çıkış / Quit** to exit.
+
+## Settings and statistics
+
+**Genel / General:** choose Türkçe or English, Dark mode or Lit mode, timer durations, always-on-top, reminder sounds, and Windows startup. The pixel font is embedded, including Turkish characters; no font installation is needed. Changing durations starts a new round. Other settings preserve your timer.
+
+**Sesler / Sounds:** enable the soundscape and set independent **Fire**, **Ambience**, and **Music** volumes from 0–100%. Fire crackle, wind, and the bonfire melody mix together. Preview and stop audio before saving. All layers are synthesized locally and work offline. Reminder sounds have their own checkbox. Soundscape playback starts disabled until enabled here.
+
+**İstatistikler / Statistics:** shows lifetime work hours, today's work hours, completed work rounds, and today's completed breaks and movement minutes. Only active timer seconds count as work; pauses, breaks, chill, time after expiry, and time while the app is closed are excluded. Lifetime tracking starts with version 1.1; older versions did not record work hours.
+
+Data is saved locally every 15 seconds and on state changes or exit to `%LOCALAPPDATA%\SoulsRevive\settings.json`, with an atomic backup. The app uses no camera or movement detection. Uninstall through Windows Installed Apps; settings and work history are retained for reinstalling.
+
+## In-app updates
+
+Open **Ayarlar > Güncelleme / Settings > Updates**, check for updates, then select **İndir ve güncelle / Download and update** and approve the restart. The app fetches the latest stable GitHub Release, verifies its SHA-256 digest, file size, and assembly version, saves your session, atomically replaces the executable, keeps a rollback copy, and restarts. It never fetches source or runs a build on the user's machine. Failed downloads leave the running version intact.
+
+The release must contain an asset named **SoulsRevive.exe** with a GitHub-provided SHA-256 digest. Drafts, prereleases, and older versions are excluded. Offline, rate-limited, missing-release, and incomplete-release states are displayed in the panel. Until the first GitHub Release is published, the app reports that no release is available.
+
+## Build and verify
+
+Develop on Windows with .NET Framework 4.8 or later (included in current Windows 10/11 installations). No NuGet packages are required.
 
 ```powershell
 .\build.ps1
-.\install.ps1
+.\verify.ps1
 ```
 
-Launch **Soul Revive** from the desktop shortcut. Open the gear menu to choose **English** or **Türkçe** and set your preferred intervals.
+The build uses the Windows .NET Framework C# compiler. It generates a multi-resolution pixel bonfire icon, embeds the Tiny5 font, and produces:
 
-The build script uses the .NET Framework C# compiler at `%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe`. Installation runs under your Windows user account.
+- `bin\SoulsRevive.exe` — portable application
+- `bin\SoulRevive-Setup.exe` — standalone graphical installer with embedded application
+- `bin\SHA256SUMS.txt` — package checksums
 
-## Usage
+`verify.ps1` checks timer transitions, work statistics, midnight rollover, legacy settings migration, backup recovery, localization, sound layers, release validation, and tamper rejection. It renders all major views in both themes and languages to `test-output`. It also verifies installer extraction and upgrades in an isolated folder and runs the real update helper against disposable fixture executables to test its readiness handshake, replacement, rollback copy, and restart. Your installed app, registry, and real statistics are untouched by these checks.
 
-- After installation, launch the app using the **Soul Revive** desktop shortcut. It also starts automatically when you sign in to Windows.
-- The default cycle is **30 minutes of work / 3 minutes of movement**. The knight's health decreases while you work. When the timer expires, the app displays a notification and opens its window.
-- Select **Take a break** to start your break, then stand up and take a short walk. The timer tracks the break duration. Movement and posture are not detected, and the app does not use a camera.
-- Completing a break restores health and starts a new work cycle. Selecting **Return early** immediately starts a full work cycle using your configured duration. Only completed breaks count toward your daily break total.
-- Use **Pause / Resume** to control the timer. Locking the screen or putting the computer to sleep pauses it. Select **Resume** when you return.
-- Drag an empty part of the window to move it. Use the gear button to adjust durations, sound, always-on-top behavior, and Windows startup. Changing durations starts a new cycle.
-- Select **− / ×** to hide the window in the system tray while the timer continues running. Double-click the knight icon in the tray to bring it back. To close the app completely, right-click the tray icon and select **Quit**.
-- Daily break counts and movement time are stored locally. Settings and the latest saved timer state are stored in `%LOCALAPPDATA%\SoulsRevive\settings.json`. Movement time represents time spent with the break timer running.
+To launch setup from a source checkout, run `./install.ps1`. For an isolated UI development profile, run `bin\SoulsRevive.exe --profile "C:\full\path\profile"`.
 
-## Installation and build
+## Publish a release
 
-In PowerShell, run `./build.ps1`, followed by `./install.ps1`. The installer copies the executable to `%LOCALAPPDATA%\SoulsRevive`, creates a desktop shortcut, and enables automatic startup for the current user through `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\SoulsRevive`. Updating an existing installation preserves its startup setting. Administrator privileges are not required.
+1. Update `AssemblyVersion` and `AssemblyFileVersion` in `src/Experience.cs`.
+2. Run build and verification, commit changes, then push a matching tag such as `v1.1.0`.
+3. `.github/workflows/release.yml` builds, verifies, checks the tag against the embedded version, and publishes the portable app, installer, and checksums to GitHub Releases. Future users can update entirely inside the app.
 
-For portable use, run `bin\SoulsRevive.exe`. Enable automatic startup in Settings. If you move the executable afterward, enable the startup setting again to update its location.
+Regular CI also builds and verifies all packages and uploads UI previews. Release publishing is a maintainer action; building locally does not publish anything.
 
-To disable automatic startup, clear **Start at Windows sign-in** in Settings. To uninstall, first disable automatic startup, quit the app through its tray menu, then delete the `%LOCALAPPDATA%\SoulsRevive` folder and desktop shortcut.
+## Artwork and font
 
-## Verification
+The scene, knight poses, UI ornamentation, bonfire icon, and synthesized audio are original. The embedded [Tiny5](https://github.com/google/fonts/tree/f265cc2d8e08067dac782ba633458b97661ab85d/ofl/tiny5) font by Stefan Schmidt is distributed under the SIL Open Font License 1.1; its license and source reference are in `assets/fonts` and embedded in both executables.
 
-Run `bin\SoulsRevive.exe --self-test "C:\full\path\test-output"` to check timer transitions, notification counts, pausing, sleep gaps, break completion and early return, duration changes, daily resets, and settings persistence. The command generates `results.txt`, a window preview, and pixel art images.
-
-This is an independent fan project. All pixel artwork is original, with no official Dark Souls assets or artwork taken from the game.
+This is an independent fan project with no official Dark Souls assets or recordings.

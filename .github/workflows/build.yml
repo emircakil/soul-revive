@@ -13,18 +13,23 @@ jobs:
       - name: Build Windows executable
         shell: pwsh
         run: ./build.ps1
-      - name: Run timer and localization checks
+      - name: Verify app, installer and updater
         shell: pwsh
-        run: |
-          $output = Join-Path $PWD 'test-output'
-          $app = Start-Process -FilePath './bin/SoulsRevive.exe' -ArgumentList @('--self-test', ('"' + $output + '"')) -Wait -PassThru -WindowStyle Hidden
-          if ($app.ExitCode -ne 0) {
-            Get-Content "$output/failure.txt" -ErrorAction SilentlyContinue
-            throw 'Self-tests failed.'
-          }
-          Get-Content "$output/results.txt"
-      - name: Upload portable executable
+        run: ./verify.ps1
+      - name: Upload Windows packages
         uses: actions/upload-artifact@v4
         with:
           name: soul-revive-windows
-          path: bin/SoulsRevive.exe
+          path: |
+            bin/SoulsRevive.exe
+            bin/SoulRevive-Setup.exe
+            bin/SHA256SUMS.txt
+      - name: Upload verification previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soul-revive-verification
+          path: |
+            test-output/*.png
+            test-output/results.txt
+            test-output/failure.txt
