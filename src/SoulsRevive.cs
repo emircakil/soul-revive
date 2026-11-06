@@ -64,7 +64,7 @@ namespace SoulsRevive
             Language = Language == "en" ? "en" : "tr"; SchemaVersion = 2;
             CheckDay();
         }
-        static double ValidSeconds(double n) { return double.IsNaN(n) || double.IsInfinity(n) ? 0 : Math.Max(0, n); }
+        internal static double ValidSeconds(double n) { return double.IsNaN(n) || double.IsInfinity(n) ? 0 : Math.Max(0, n); }
         public void CheckDay()
         { CheckDay(DateTime.Now); }
         public void CheckDay(DateTime now)
@@ -145,11 +145,14 @@ namespace SoulsRevive
 
     static class Storage
     {
-        public static string DirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulsRevive");
+        public static readonly string DefaultDirectoryPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SoulsRevive");
+        public static string DirectoryPath = DefaultDirectoryPath;
         public static string SettingsPath { get { return Path.Combine(DirectoryPath, "settings.json"); } }
+        public static string StatisticsPath { get { return Path.Combine(DirectoryPath, "statistics.json"); } }
         public static string LastError = "";
         public static Preferences Load()
         {
+            Preferences preferences = null;
             foreach (string path in new[] { SettingsPath, SettingsPath + ".bak" })
             {
                 try
@@ -158,26 +161,71 @@ namespace SoulsRevive
                         using (var f = File.OpenRead(path))
                         {
                             var p = (Preferences)new DataContractJsonSerializer(typeof(Preferences)).ReadObject(f);
-                            if (p != null) return p;
+                            if (p != null) { preferences = p; break; }
                         }
                 }
                 catch (Exception ex) { LastError = ex.Message; }
             }
-            return new Preferences();
+            if (preferences == null) preferences = new Preferences();
+            RestoreStatistics(preferences);
+            return preferences;
+        }
+        static void RestoreStatistics(Preferences preferences)
+        {
+            preferences.CheckDay();
+            foreach (string path in new[] { StatisticsPath, StatisticsPath + ".bak" })
+            {
+                try
+                {
+                    if (!File.Exists(path)) continue;
+                    using (var file = File.OpenRead(path))
+                    {
+                        var saved = (WorkStatistics)new DataContractJsonSerializer(typeof(WorkStatistics)).ReadObject(file);
+                        if (saved == null) continue;
+                        preferences.TotalWorkSeconds = Math.Max(Preferences.ValidSeconds(preferences.TotalWorkSeconds), Preferences.ValidSeconds(saved.TotalWorkSeconds));
+                        preferences.CompletedSessions = Math.Max(preferences.CompletedSessions, saved.CompletedSessions);
+                        if (saved.Day == preferences.Day)
+                            preferences.TodayWorkSeconds = Math.Max(Preferences.ValidSeconds(preferences.TodayWorkSeconds), Preferences.ValidSeconds(saved.TodayWorkSeconds));
+                    }
+                }
+                catch (Exception ex) { LastError = ex.Message; }
+            }
+        }
+        static void WriteAtomic<T>(string path, T value)
+        {
+            string temporary = path + ".tmp";
+            using (var file = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                new DataContractJsonSerializer(typeof(T)).WriteObject(file, value);
+                file.Flush(true);
+            }
+            if (File.Exists(path)) File.Replace(temporary, path, path + ".bak");
+            else File.Move(temporary, path);
         }
         public static bool Save(Preferences p)
         {
             try
             {
                 Directory.CreateDirectory(DirectoryPath);
-                string tmp = SettingsPath + ".tmp";
-                using (var f = File.Create(tmp)) new DataContractJsonSerializer(typeof(Preferences)).WriteObject(f, p);
-                if (File.Exists(SettingsPath)) File.Replace(tmp, SettingsPath, SettingsPath + ".bak");
-                else File.Move(tmp, SettingsPath);
+                RestoreStatistics(p);
+                WriteAtomic(StatisticsPath, new WorkStatistics {
+                    Day = p.Day, TotalWorkSeconds = p.TotalWorkSeconds,
+                    TodayWorkSeconds = p.TodayWorkSeconds, CompletedSessions = p.CompletedSessions
+                });
+                WriteAtomic(SettingsPath, p);
                 LastError = ""; return true;
             }
             catch (Exception ex) { LastError = ex.Message; return false; }
         }
+    }
+
+    [DataContract]
+    sealed class WorkStatistics
+    {
+        [DataMember] public string Day;
+        [DataMember] public double TotalWorkSeconds;
+        [DataMember] public double TodayWorkSeconds;
+        [DataMember] public int CompletedSessions;
     }
 
     static class Startup
@@ -220,7 +268,7 @@ namespace SoulsRevive
         }
         public static void Label(Graphics g, string s, float size, Color color, Rectangle rect, ContentAlignment align, string family)
         {
-            using (Font f = PixelFont.Create(size * 1.65f))
+            using (Font f = PixelFont.Create(PixelFont.TextPixels(size)))
             using (var brush = new SolidBrush(color))
             using (var format = new StringFormat())
             {
@@ -260,7 +308,7 @@ namespace SoulsRevive
     }
 
     // Original pixel artwork, rendered on a 172 x 92 canvas with integer pixels.
-    static class PixelArt
+    static partial class PixelArt
     {
         static void R(Graphics g, string hex, int x, int y, int w, int h)
         { using (var b = new SolidBrush(ColorTranslator.FromHtml(hex))) g.FillRectangle(b, x, y, w, h); }
@@ -274,6 +322,7 @@ namespace SoulsRevive
         { return Scene(health, rest, frame, 22, false); }
         public static Bitmap Scene(double health, bool rest, int frame, double hour, bool chill)
         {
+            if (chill) return Tavern(frame);
             var bitmap = new Bitmap(172, 92);
             using (Graphics g = Graphics.FromImage(bitmap))
             {
@@ -322,24 +371,18 @@ namespace SoulsRevive
                     int drift = (int)Math.Round(rise * .15 + 2 * Math.Sin(beat + i));
                     R(g, rise < 17 ? "#DF9250" : "#8F4D31",120+(i*11)%16+drift,67-rise,1,1);
                 }
-                bool wander = chill && frame % 240 < 144;
-                if(rest || (chill && !wander)) DrawRestingKnight(g,frame,rest);
+                if(rest) DrawRestingKnight(g,frame,true);
                 else {
-                int bob = wander ? -(int)Math.Round(2 * Math.Abs(Math.Sin(beat))) : (int)Math.Round(Math.Sin(beat / 2 + (frame / 16 % 2) * Math.PI));
+                int bob = (int)Math.Round(Math.Sin(beat / 2 + (frame / 16 % 2) * Math.PI));
                 int slump = health <= 0 && !rest ? 7 : 0;
-                int ox = wander ? 58+(int)(18*Math.Sin(frame*Math.PI/72)) : 65, oy = 26 + bob + slump;
+                int ox = 65, oy = 26 + bob + slump;
                 var saved = g.Save(); g.TranslateTransform(ox, oy);
                 // Tattered rust-red cloak, steel plate, chainmail and great helm.
                 int wind = (int)Math.Round(3 * Math.Sin(beat));
                 Poly(g,"#292029",-10,19,-18,30,-21+wind,49,-15+wind,46,-12+wind,50,-9,46,-5,49,1,31);
                 Poly(g,"#713B39",-9,20,-15,29,-17+wind,44,-13+wind,42,-11+wind,46,-9,41,-5,44,0,25);
                 R(g,"#9F5546",-11,25,3,13);
-                if (wander)
-                {
-                    DrawWalkingLeg(g, 6, beat + Math.PI, bob, "#53606C");
-                    DrawWalkingLeg(g, -5, beat, bob, "#87949F");
-                }
-                else if (slump == 0)
+                if (slump == 0)
                 {
                     R(g,"#22272E",-7,35,8,18); R(g,"#22272E",4,35,8,18);
                     R(g,"#58626E",-6,36,6,13); R(g,"#7F8B97",-6,37,2,10);
@@ -406,18 +449,6 @@ namespace SoulsRevive
                 R(g,"#CFD5C3",x,y,4,1); R(g,"#CFD5C3",x+2,y+1,1,1); R(g,"#CFD5C3",x+1,y+2,1,1); R(g,"#CFD5C3",x,y+3,4,1);
             }
         }
-        static void DrawWalkingLeg(Graphics g, int hip, double phase, int bob, string steel)
-        {
-            int stride = (int)Math.Round(6 * Math.Sin(phase));
-            int lift = (int)Math.Round(4 * Math.Max(0, Math.Cos(phase)));
-            int knee = hip + stride / 2 + lift;
-            int foot = hip + stride;
-            int sole = 53 - lift - bob;
-            Poly(g,"#323C48",hip-3,34,hip+4,34,knee+4,43,foot+4,sole,foot-3,sole,knee-3,43);
-            R(g,steel,knee-3,40-lift/2,7,4);
-            R(g,"#394450",foot-3,sole-4,10,5);
-            R(g,steel,foot-2,sole-4,7,2);
-        }
         public static Icon MakeIcon()
         {
             using (var bmp = new Bitmap(32,32))
@@ -477,6 +508,7 @@ namespace SoulsRevive
                 if(args.Length>0 && args[0]=="--quit") {try{using(var quit=EventWaitHandle.OpenExisting(@"Local\SoulsRevive.Quit"))quit.Set();}catch(WaitHandleCannotBeOpenedException){}return;}
                 Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false); PixelFont.Initialize();
                 if(args.Length>=2 && args[0]=="--self-test") { Tests.Run(args[1]); return; }
+                if(args.Length>=2 && args[0]=="--audio-self-test") { Tests.RunAudio(args[1]); return; }
                 if(args.Length>0 && args[0]=="--enable-startup") { Startup.Set(true); return; }
                 if(args.Length>0 && args[0]=="--disable-startup") { Startup.Set(false); return; }
                 bool created;
@@ -492,7 +524,7 @@ namespace SoulsRevive
             }
             catch(Exception ex)
             {
-                if(args.Length>=2 && args[0]=="--self-test")
+                if(args.Length>=2 && (args[0]=="--self-test" || args[0]=="--audio-self-test"))
                 { Directory.CreateDirectory(args[1]); File.WriteAllText(Path.Combine(args[1],"failure.txt"),ex.ToString()); Environment.ExitCode=1; }
                 else MessageBox.Show(L.Text("Soul Revive başlatılamadı.\n","Could not start Soul Revive.\n")+ex.Message,"Soul Revive",MessageBoxButtons.OK,MessageBoxIcon.Error);
             }

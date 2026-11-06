@@ -18,16 +18,16 @@ namespace SoulsRevive
         public static void Run(string output)
         {
             Directory.CreateDirectory(output);string failure=Path.Combine(output,"failure.txt");if(File.Exists(failure))File.Delete(failure);
-            Storage.DirectoryPath=Path.Combine(output,"persistence");
+            Storage.DirectoryPath=Path.Combine(output,"persistence-"+Guid.NewGuid().ToString("N"));
             var p=new Preferences();var e=new TimerEngine(p);int due=0,revived=0;
             e.Changed+=delegate(string s){if(s=="due")due++;if(s=="revived")revived++;};
-            Check(Near(DayCycle.Hour(p,DateTime.Now),5.5),"work begins at dawn");
+            Check(Near(DayCycle.Hour(p),5.5),"work begins at dawn");
             for(int i=0;i<1800;i++)e.Advance(1);
             Check(e.Due&&due==1&&e.Health==0,"work reaches zero and notifies once");
             Check(Near(p.TotalWorkSeconds,1800)&&p.CompletedSessions==1,"active work and completed sessions counted");
-            Check(Near(DayCycle.Hour(p,DateTime.Now),20.5),"work ends after dark");
+            Check(Near(DayCycle.Hour(p),20.5),"work ends after dark");
             e.Advance(1);Check(due==1&&p.TotalWorkSeconds==1800,"expired timer neither repeats nor accrues work");
-            e.BeginBreak();Check(DayCycle.Hour(p,DateTime.Now)==22,"break scene is night");
+            e.BeginBreak();Check(DayCycle.Hour(p)==22,"break scene is night");
             e.Advance(5);e.TogglePause();double before=p.Remaining;e.Advance(2);Check(p.Remaining==before,"pause freezes time");
             e.TogglePause();e.Advance(3600);Check(p.Remaining==before,"sleep gap excluded");
             e.Advance(double.NaN);e.Advance(double.PositiveInfinity);Check(p.Remaining==before,"nonfinite elapsed time excluded");
@@ -38,7 +38,6 @@ namespace SoulsRevive
             e.Advance(1);Check(p.Remaining==1799,"new round counts down");
             e.SetChill(true);before=p.TotalWorkSeconds;e.Advance(5);e.BeginBreak();e.TogglePause();
             Check(p.Chill&&!p.InBreak&&!p.Paused&&p.TotalWorkSeconds==before&&!e.Due,"chill disables timers, breaks, and work accumulation");
-            Check(Near(DayCycle.Hour(p,DateTime.Today.AddHours(14.5)),14.5),"chill uses local PC clock");
             e.SetChill(false);Check(p.Remaining==1800&&!p.Paused,"return from chill starts a fresh dawn");
             e.ApplyDurations(45,5);Check(p.Remaining==2700&&!p.InBreak,"duration change resets cycle");
             p.Paused=true;e.ApplyDurations(45,5);Check(p.Paused,"unrelated settings preserve pause");
@@ -54,11 +53,28 @@ namespace SoulsRevive
             Check(loaded.TotalWorkSeconds==12456&&loaded.TodayWorkSeconds==321&&loaded.Chill&&loaded.LightMode&&loaded.AudioEnabled&&loaded.FireVolume==71&&loaded.AmbienceVolume==43&&loaded.MusicVolume==19,"new preferences and statistics survive restart");
             Check(loaded.X==150&&loaded.Y==160&&loaded.Remaining==60,"position and timer preserved");
             using(var localized=new Companion(loaded,true))using(var settings=new SettingsDialog(loaded)) {Check(settings.Language=="en"&&settings.Text.Contains("Settings"),"English settings survive restart");Check(localized.Controls[0].Text.Contains("Take a break"),"English action button");}
-            p.TotalWorkSeconds=15000;Check(Storage.Save(p),"second save creates backup");File.WriteAllText(Storage.SettingsPath,"broken json");Check(Storage.Load().TotalWorkSeconds==12456,"corrupt settings recover previous backup");
+            p.TotalWorkSeconds=15000;Check(Storage.Save(p),"second save creates backup");File.WriteAllText(Storage.SettingsPath,"broken json");Check(Storage.Load().TotalWorkSeconds==15000,"corrupt settings preserve latest independent statistics");
+            File.WriteAllText(Storage.SettingsPath + ".bak", "broken backup");
+            loaded = Storage.Load();
+            Check(loaded.TotalWorkSeconds == 15000 && loaded.TodayWorkSeconds == 321, "statistics survive complete settings recovery");
+            loaded.TotalWorkSeconds = 0; loaded.TodayWorkSeconds = 0;
+            Check(Storage.Save(loaded) && loaded.TotalWorkSeconds == 15000 && loaded.TodayWorkSeconds == 321, "saving reset preferences cannot erase accumulated work");
+            loaded.Day = DateTime.Today.AddDays(-1).ToString("yyyy-MM-dd");
+            Storage.Save(loaded);
+            Check(Storage.Load().TodayWorkSeconds == 321, "same-day restart restores daily work");
+            File.WriteAllText(Storage.SettingsPath, "broken settings");
+            File.WriteAllText(Storage.SettingsPath + ".bak", "broken backup");
+            File.WriteAllText(Storage.StatisticsPath, "broken statistics");
+            loaded = Storage.Load();
+            Check(loaded.TotalWorkSeconds == 15000 && loaded.TodayWorkSeconds == 321, "statistics backup restores work when settings and primary statistics fail");
+            var restarted = new TimerEngine(loaded);
+            restarted.Advance(1, DateTime.Today.AddHours(12));
+            Check(loaded.TotalWorkSeconds == 15001 && loaded.TodayWorkSeconds == 322, "restarted timer continues accumulating saved work");
+            Check(StatsDialog.Duration(3661) == "01:01:01" && StatsDialog.Duration(360001) == "100:00:01", "duration retains seconds and lifetime hours above 24");
             Check(Companion.TimeText(.1)=="00:01"&&Companion.TimeText(3600)=="60:00","timer formatting");
             string zeros=new string('0',64),url=Updates.Repository+"/releases/download/v2.0.0/SoulsRevive.exe";
             Check(Updates.Parse(Json("v2.0.0",url,zeros)).Version==new Version(2,0,0,0),"release parser selects verified application asset");
-            Check(Updates.Parse("{\"tag_name\":\"v1.1.0\"}")==null&&Updates.Parse("{\"tag_name\":\"v1.0.0\"}")==null,"equal and older releases never downgrade");
+            Check(Updates.Parse("{\"tag_name\":\"v"+Updates.VersionText+"\"}")==null&&Updates.Parse("{\"tag_name\":\"v1.1.0\"}")==null,"equal and older releases never downgrade");
             Reject(delegate{Updates.Parse(Json("v2.0.0","http://github.com/emircakil/soul-revive/releases/download/bad",zeros));},"updater rejects insecure transport");
             Reject(delegate{Updates.Parse(Json("v2.0.0","https://github.com/other/project/releases/download/bad",zeros));},"updater restricts repository");
             Reject(delegate{Updates.Parse(Json("v2.0.0",url,"bad"));},"updater requires SHA-256 digest");
@@ -78,8 +94,18 @@ namespace SoulsRevive
             File.WriteAllBytes(Path.Combine(output,"soundscape.wav"),Soundscape.Render(35,25,35,8));
             using(var dawn=PixelArt.Scene(1,false,0,5.5,false))using(var noon=PixelArt.Scene(.5,false,0,12,false))using(var night=PixelArt.Scene(0,false,0,20.5,false))
             {Check(dawn.GetPixel(0,0)!=noon.GetPixel(0,0)&&noon.GetPixel(0,0)!=night.GetPixel(0,0),"dawn, daylight and night have distinct skies");dawn.Save(Path.Combine(output,"dawn.png"));noon.Save(Path.Combine(output,"day.png"));night.Save(Path.Combine(output,"night.png"));}
-            using(var rest=PixelArt.Scene(1,true,0,22,false))using(var walk=PixelArt.Scene(1,false,0,12,true))using(var chill=PixelArt.Scene(1,false,180,12,true))
-            {Check(rest.GetPixel(76,63)!=walk.GetPixel(76,63)||rest.GetPixel(80,70)!=walk.GetPixel(80,70),"break uses distinct sleeping pose");rest.Save(Path.Combine(output,"sleep.png"));walk.Save(Path.Combine(output,"chill-walk.png"));chill.Save(Path.Combine(output,"chill-rest.png"));}
+            using(var rest=PixelArt.Scene(1,true,0,22,false))using(var work=PixelArt.Scene(1,false,0,12,false))
+            {Check(!SamePixels(rest,work),"break keeps its sleeping pose outside the tavern");rest.Save(Path.Combine(output,"sleep.png"));}
+            int arrival=PixelArt.TavernArrivalFrames;
+            using(var morning=PixelArt.Scene(1,false,arrival+36,6,true))using(var evening=PixelArt.Scene(1,false,arrival+36,23,true))
+            {Check(SamePixels(morning,evening),"tavern scene does not change with local time");morning.Save(Path.Combine(output,"tavern-toast.png"));}
+            using(var entering=PixelArt.Tavern(0))using(var seated=PixelArt.Tavern(arrival))using(var toast=PixelArt.Tavern(arrival+36))using(var sip=PixelArt.Tavern(arrival+76))using(var solaireSip=PixelArt.Tavern(arrival+104))
+            {
+                Check(!SamePixels(entering,seated,new Rectangle(48,35,28,48)),"knight arrives before sitting at the tavern table");
+                Check(!SamePixels(seated,toast,new Rectangle(89,43,20,17))&&!SamePixels(seated,sip,new Rectangle(70,40,18,17))&&!SamePixels(seated,solaireSip,new Rectangle(109,40,16,17)),"shared toast and each companion's drinking poses animate");
+                Check(seated.GetPixel(124,60).ToArgb()==ColorTranslator.FromHtml("#E3AF4F").ToArgb(),"Solaire wears the sun crest");
+                entering.Save(Path.Combine(output,"tavern-arrival.png"));seated.Save(Path.Combine(output,"tavern-seated.png"));sip.Save(Path.Combine(output,"tavern-sip.png"));solaireSip.Save(Path.Combine(output,"tavern-solaire-sip.png"));
+            }
             foreach(bool light in new[]{false,true})foreach(string lang in new[]{"tr","en"})
             {
                 var pref=new Preferences{Language=lang,LightMode=light,Day=DateTime.Now.ToString("yyyy-MM-dd"),TotalWorkSeconds=14736,TodayWorkSeconds=7524,CompletedSessions=8,Breaks=3};
@@ -91,10 +117,53 @@ namespace SoulsRevive
                 pref.InBreak=false;pref.Chill=true;using(var form=new Companion(pref,true))Render(form,output,"chill-"+suffix);
             }
             Theme.Light=false;L.Language="tr";using(var setup=new SetupDialog())Render(setup,output,"setup");
-            Check(PixelFont.Family.Name=="Tiny5","bundled pixel font loaded without system installation");
+            Check(PixelFont.Family.Name=="Pixelify Sans","bundled pixel font loaded without system installation");
             report.AppendLine(count+" checks passed.");File.WriteAllText(Path.Combine(output,"results.txt"),report.ToString());
         }
         static bool Equal(byte[] a,byte[] b) {if(a.Length!=b.Length)return false;for(int i=0;i<a.Length;i++)if(a[i]!=b[i])return false;return true;}
+        public static void RunAudio(string output)
+        {
+            Directory.CreateDirectory(output);
+            using (var loop = new LoopingAudio(Soundscape.Render(0, 0, 15, 1)))
+                AwaitAudio(delegate { return loop.PlaybackBytes > 40000; }, "PCM audio continues beyond its first loop");
+            var preferences = new Preferences { AudioEnabled = true, FireVolume = 0, AmbienceVolume = 0, MusicVolume = 20 };
+            using (var background = new Soundscape())
+            {
+                background.Apply(preferences);
+                AwaitAudio(delegate { return background.PlaybackBytes > 0; }, "enabled soundscape starts outside Settings");
+                using (var preview = new Soundscape())
+                {
+                    preview.Apply(preferences);
+                    AwaitAudio(delegate { return preview.PlaybackBytes > 0; }, "preview has its own playing stream");
+                }
+                uint before = background.PlaybackBytes;
+                System.Media.SystemSounds.Asterisk.Play();
+                AwaitAudio(delegate { return background.PlaybackBytes > before + 8000; }, "closing preview and reminder sounds cannot stop background music");
+                preferences.AudioEnabled = false;
+                background.Apply(preferences);
+                Check(background.PlaybackBytes == 0, "master switch stops background playback");
+                preferences.AudioEnabled = true;
+                background.Apply(preferences);
+                AwaitAudio(delegate { return background.PlaybackBytes > 0; }, "reenabling soundscape resumes playback");
+                background.Apply(preferences);
+                background.Mute();
+                System.Threading.Thread.Sleep(500);
+                Check(background.PlaybackBytes == 0, "muting cancels pending audio generation");
+            }
+            File.WriteAllText(Path.Combine(output, "audio-results.txt"), report.ToString());
+        }
+        static void AwaitAudio(Func<bool> condition, string name)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(8);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline) throw new Exception(name);
+                System.Threading.Thread.Sleep(25);
+            }
+            Check(true, name);
+        }
+        static bool SamePixels(Bitmap a,Bitmap b) {return a.Size==b.Size&&SamePixels(a,b,new Rectangle(Point.Empty,a.Size));}
+        static bool SamePixels(Bitmap a,Bitmap b,Rectangle area) {for(int y=area.Top;y<area.Bottom;y++)for(int x=area.Left;x<area.Right;x++)if(a.GetPixel(x,y)!=b.GetPixel(x,y))return false;return true;}
         static void Render(Form form,string output,string name)
         {form.Show();Application.DoEvents();using(var b=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(b,new Rectangle(0,0,b.Width,b.Height));b.Save(Path.Combine(output,name+".png"));}form.Hide();}
     }

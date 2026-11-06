@@ -15,8 +15,10 @@ if ($extract.ExitCode -ne 0) { throw 'Installer extraction failed.' }
 $expected = (Get-FileHash -LiteralPath $app).Hash
 if ((Get-FileHash -LiteralPath (Join-Path $extracted 'SoulsRevive.exe')).Hash -ne $expected) { throw 'Installer payload differs from app.' }
 [IO.File]::WriteAllText((Join-Path $extracted 'settings.json'), '{"TotalWorkSeconds":9876}')
+[IO.File]::WriteAllText((Join-Path $extracted 'statistics.json'), '{"TotalWorkSeconds":9876,"TodayWorkSeconds":321}')
 $extract = Start-Process -FilePath $setup -ArgumentList @('--extract', ('"' + $extracted + '"')) -Wait -PassThru -WindowStyle Hidden
 if ($extract.ExitCode -ne 0 -or [IO.File]::ReadAllText((Join-Path $extracted 'settings.json')) -ne '{"TotalWorkSeconds":9876}') { throw 'Installer upgrade did not preserve user data.' }
+if ([IO.File]::ReadAllText((Join-Path $extracted 'statistics.json')) -ne '{"TotalWorkSeconds":9876,"TodayWorkSeconds":321}') { throw 'Installer upgrade changed the statistics.' }
 Write-Output 'PASS installer extraction, payload hash and upgrade data preservation'
 
 # Exercise the real updater against two small fixture programs, including restart.
@@ -33,7 +35,7 @@ class Fixture { static void Main() { string d=Path.GetDirectoryName(Assembly.Get
 '@ | Set-Content -LiteralPath $beforeSource -Encoding utf8
 @'
 using System; using System.IO; using System.Reflection;
-class Fixture { static void Main() { File.WriteAllText(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location),"restarted"),"updated"); } }
+class Fixture { static void Main(string[] args) { string dir=Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location); File.WriteAllText(Path.Combine(dir,"restart-profile"),string.Join("\n",args)); File.WriteAllText(Path.Combine(dir,"restarted"),"updated"); } }
 '@ | Set-Content -LiteralPath $afterSource -Encoding utf8
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 & $compiler /nologo /target:winexe /out:$target $beforeSource
@@ -47,6 +49,10 @@ $hostProcess = $null
 $helperProcess = $null
 $readyName = 'Local\SoulsRevive.Verify.' + [Guid]::NewGuid().ToString('N')
 $ready = [Threading.EventWaitHandle]::new($false, [Threading.EventResetMode]::ManualReset, $readyName)
+$profileDirectory = Join-Path $fixtureDir 'work profile'
+New-Item -ItemType Directory -Path $profileDirectory -Force | Out-Null
+$statisticsFile = Join-Path $profileDirectory 'statistics.json'
+[IO.File]::WriteAllText($statisticsFile, '{"TotalWorkSeconds":9876,"TodayWorkSeconds":321}')
 try {
     $hostProcess = Start-Process -FilePath $target -PassThru -WindowStyle Hidden
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -54,7 +60,7 @@ try {
         if ([DateTime]::UtcNow -gt $deadline) { throw 'Fixture did not start.' }
         Start-Sleep -Milliseconds 100
     }
-    $helperProcess = Start-Process -FilePath $helper -ArgumentList @('--apply-update', $hostProcess.Id, ('"' + $target + '"'), ('"' + $payload + '"'), $newHash, ('"' + $readyName + '"')) -PassThru -WindowStyle Hidden
+    $helperProcess = Start-Process -FilePath $helper -ArgumentList @('--apply-update', $hostProcess.Id, ('"' + $target + '"'), ('"' + $payload + '"'), $newHash, ('"' + $readyName + '"'), ('"' + $profileDirectory + '"')) -PassThru -WindowStyle Hidden
     if (-not $ready.WaitOne(10000)) { throw 'Updater readiness handshake failed.' }
     [IO.File]::WriteAllText((Join-Path $fixtureDir 'release'), 'exit')
     if (-not $helperProcess.WaitForExit(15000) -or $helperProcess.ExitCode -ne 0) { throw 'Updater helper failed.' }
@@ -65,7 +71,10 @@ try {
     }
     if ((Get-FileHash -LiteralPath $target).Hash.ToLowerInvariant() -ne $newHash) { throw 'Updated executable hash mismatch.' }
     if ((Get-FileHash -LiteralPath ($target + '.update-backup')).Hash -ne $oldHash) { throw 'Rollback copy was not preserved.' }
+    if ([IO.File]::ReadAllText((Join-Path $fixtureDir 'restart-profile')) -ne ("--profile`n" + $profileDirectory)) { throw 'Updater did not preserve the work profile.' }
+    if ([IO.File]::ReadAllText($statisticsFile) -ne '{"TotalWorkSeconds":9876,"TodayWorkSeconds":321}') { throw 'Update changed the work statistics.' }
     Write-Output 'PASS updater handshake, parent exit, atomic replacement, rollback copy and restart'
+    Write-Output 'PASS update preserves profile, daily work and total work'
 } finally {
     $ready.Dispose()
     foreach ($process in @($hostProcess, $helperProcess)) { if ($null -ne $process -and -not $process.HasExited) { $process.Kill(); $process.WaitForExit() } }

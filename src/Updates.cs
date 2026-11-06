@@ -115,7 +115,8 @@ namespace SoulsRevive
                 string readyName=@"Local\SoulsRevive.Update."+Guid.NewGuid().ToString("N");
                 using(var ready=new System.Threading.EventWaitHandle(false,System.Threading.EventResetMode.ManualReset,readyName))
                 {
-                    var start=new ProcessStartInfo(helper,"--apply-update "+Process.GetCurrentProcess().Id+" "+Quote(System.Windows.Forms.Application.ExecutablePath)+" "+Quote(payload)+" "+update.Asset.digest.Substring(7)+" "+Quote(readyName));
+                    string profileArgument = string.Equals(Path.GetFullPath(Storage.DirectoryPath), Storage.DefaultDirectoryPath, StringComparison.OrdinalIgnoreCase) ? "" : " " + Quote(Storage.DirectoryPath);
+                    var start=new ProcessStartInfo(helper,"--apply-update "+Process.GetCurrentProcess().Id+" "+Quote(System.Windows.Forms.Application.ExecutablePath)+" "+Quote(payload)+" "+update.Asset.digest.Substring(7)+" "+Quote(readyName)+profileArgument);
                     start.UseShellExecute=false; start.CreateNoWindow=true;
                     using(var process=Process.Start(start)) if(!ready.WaitOne(15000))throw new TimeoutException("The update helper did not start. Your current version is preserved.");
                 }
@@ -125,7 +126,8 @@ namespace SoulsRevive
         internal static string Quote(string value) { if(value.Contains("\""))throw new ArgumentException("Invalid path."); return "\""+value+"\""; }
         public static void Apply(string[] args)
         {
-            if(args.Length!=6)throw new ArgumentException("Invalid update arguments.");
+            if(args.Length!=6 && args.Length!=7)throw new ArgumentException("Invalid update arguments.");
+            string restartArguments = args.Length == 7 ? "--profile " + Quote(Path.GetFullPath(args[6])) : "";
             int pid=int.Parse(args[1]); string target=Path.GetFullPath(args[2]),payload=Path.GetFullPath(args[3]);
             using(var parent=Process.GetProcessById(pid))
             {
@@ -135,11 +137,11 @@ namespace SoulsRevive
             }
             if(!string.Equals(Hash(payload),args[4],StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Update integrity check failed.");
             ReplaceWithRollback(payload,target);
-            try {Process.Start(new ProcessStartInfo(target) {UseShellExecute=true});}
+            try {Process.Start(new ProcessStartInfo(target, restartArguments) {UseShellExecute=true});}
             catch
             {
                 string backup=target+".update-backup";
-                if(File.Exists(backup)) {File.Replace(backup,target,target+".failed-update");Process.Start(new ProcessStartInfo(target){UseShellExecute=true});}
+                if(File.Exists(backup)) {File.Replace(backup,target,target+".failed-update");Process.Start(new ProcessStartInfo(target,restartArguments){UseShellExecute=true});}
                 throw;
             }
             try {using(var key=Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\SoulsRevive",true))if(key!=null&&string.Equals(key.GetValue("InstallLocation") as string,Path.GetDirectoryName(target),StringComparison.OrdinalIgnoreCase))key.SetValue("DisplayVersion",AssemblyName.GetAssemblyName(target).Version.ToString(3));}catch(System.Security.SecurityException) {}catch(UnauthorizedAccessException) {}

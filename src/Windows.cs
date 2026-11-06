@@ -15,7 +15,7 @@ namespace SoulsRevive
         readonly ContextMenuStrip menu;
         readonly EmberButton primary, pause, workMode, chillMode;
         readonly Soundscape audio = new Soundscape();
-        int lastTick=Environment.TickCount, frame, saveTicks;
+        int lastTick=Environment.TickCount, frame, chillFrame, saveTicks;
         bool exiting, dragging;
         Point dragOffset;
         string message="";
@@ -23,6 +23,7 @@ namespace SoulsRevive
         public Companion(Preferences p,bool preview)
         {
             engine=new TimerEngine(p); L.Language=p.Language; Theme.Light=p.LightMode;
+            chillFrame=preview?PixelArt.TavernArrivalFrames+36:0;
             Text="Soul Revive"; AccessibleName=L.Text("Soul Revive mola sayacı","Soul Revive break timer");
             ClientSize=new Size(384,636); FormBorderStyle=FormBorderStyle.None; AutoScaleMode=AutoScaleMode.None;
             BackColor=Theme.Background; DoubleBuffered=true; StartPosition=FormStartPosition.Manual;
@@ -45,6 +46,14 @@ namespace SoulsRevive
             tray=new NotifyIcon { Text="Soul Revive", Icon=Icon, ContextMenuStrip=menu, Visible=!preview };
             tray.DoubleClick+=delegate {Reveal();}; tray.BalloonTipClicked+=delegate {Reveal();};
             engine.Changed+=OnChanged;
+            audio.Failed += delegate(string error) {
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke((Action)delegate {
+                    message = L.Text("Ses başlatılamadı: ", "Audio could not start: ") + error;
+                    messageUntil = DateTime.Now.AddSeconds(15);
+                    Invalidate();
+                });
+            };
             timer=new System.Windows.Forms.Timer {Interval=125};
             timer.Tick+=delegate
             {
@@ -52,8 +61,8 @@ namespace SoulsRevive
                 if(Program.ShowRequested!=null && Program.ShowRequested.WaitOne(0))Reveal();
                 int now=Environment.TickCount; double delta=unchecked((uint)(now-lastTick))/1000.0; lastTick=now;
                 if(delta>5 && !p.Chill) {p.Paused=true; Save();}
-                engine.Advance(delta); frame++;
-                if(++saveTicks>=120) {saveTicks=0;Save();}
+                engine.Advance(delta); frame++; if(p.Chill)chillFrame++;
+                if(++saveTicks>=40) {saveTicks=0;Save();}
                 UpdateControls(); if(Visible)Invalidate();
             };
             if(!preview) {SystemEvents.PowerModeChanged+=OnPower; SystemEvents.SessionSwitch+=OnSession; timer.Start(); audio.Apply(p);}
@@ -78,6 +87,7 @@ namespace SoulsRevive
         internal void Quit() {exiting=true;Close();}
         void OnChanged(string reason)
         {
+            if(reason=="mode")chillFrame=0;
             if(reason=="due") {Notify(L.Text("Ateş sönüyor, şövalye.","Your fire is fading."),L.Text("Mola ver'e bas; ayağa kalkıp biraz yürü.","Select Take a break; stand up and walk."));Reveal();}
             if(reason=="revived") {message=L.Text("ATEŞ YENİDEN CANLANDI","HUMANITY RESTORED");messageUntil=DateTime.Now.AddSeconds(8);Notify(L.Text("Yeni bir şafak.","A new dawn."),L.Text("Mola tamamlandı. Yeni çalışma başladı.","Break complete. Your next work period has started."));}
             lastTick=Environment.TickCount;Save();UpdateControls();Invalidate();
@@ -95,7 +105,7 @@ namespace SoulsRevive
             menu.Items[2].Text=L.Text("Ayarlar","Settings");menu.Items[4].Text=L.Text("Çıkış","Quit");
             foreach(Control c in Controls)if(c.Top==534)c.Text=L.Text("İSTATİSTİKLER >","STATISTICS >");
             foreach(Control c in Controls)if(c.Top==18)c.AccessibleName=c.Left==274?L.Text("Ayarlar","Settings"):L.Text("Tepsiye gizle","Hide in tray");
-            tray.Text="Soul Revive · "+(p.Chill?L.Text("Ateş başında","By the fire"):p.Paused?L.Text("Duraklatıldı","Paused"):(p.InBreak?L.Text("Mola ","Break "):L.Text("Çalışma ","Work "))+TimeText(p.Remaining));
+            tray.Text="Soul Revive · "+(p.Chill?L.Text("Solaire ile meyhanede","At the tavern with Solaire"):p.Paused?L.Text("Duraklatıldı","Paused"):(p.InBreak?L.Text("Mola ","Break "):L.Text("Çalışma ","Work "))+TimeText(p.Remaining));
         }
         internal static string TimeText(double seconds) {int n=(int)Math.Ceiling(seconds);return(n/60).ToString("00")+":"+(n%60).ToString("00");}
         void OpenStats() {using(var dialog=new StatsDialog(engine.P))dialog.ShowDialog(this);}
@@ -119,28 +129,30 @@ namespace SoulsRevive
         protected override void OnPaint(PaintEventArgs e)
         {
             var p=engine.P;Graphics g=e.Graphics;g.Clear(Theme.Background);Theme.Frame(g,ClientRectangle,Theme.Background);
-            Theme.Label(g,"SOUL / REVIVE",17,Theme.Gold,new Rectangle(20,14,246,30),ContentAlignment.MiddleLeft,"");
+            Theme.Label(g,"SOUL REVIVE",17,Theme.Gold,new Rectangle(20,14,246,30),ContentAlignment.MiddleLeft,"");
             Theme.Label(g,L.Text("KÜÇÜK MOLALAR. YENİDEN DOĞ.","SMALL BREAKS. RISE AGAIN."),8,Theme.Muted,new Rectangle(20,43,344,20),ContentAlignment.MiddleLeft,"");
             Theme.Frame(g,new Rectangle(18,114,348,188),Theme.Panel);
-            using(var scene=PixelArt.Scene(p.Chill?1:engine.Health,p.InBreak,frame,DayCycle.Hour(p,DateTime.Now),p.Chill))
+            using(var scene=PixelArt.Scene(p.Chill?1:engine.Health,p.InBreak,p.Chill?chillFrame:frame,DayCycle.Hour(p),p.Chill))
             {g.InterpolationMode=InterpolationMode.NearestNeighbor;g.PixelOffsetMode=PixelOffsetMode.Half;g.DrawImage(scene,new Rectangle(20,116,344,184));g.PixelOffsetMode=PixelOffsetMode.Default;}
-            string state=p.Chill?L.Text("ATEŞ BAŞINDA, ACELEMİZ YOK","BY THE FIRE, NO HURRY"):p.Paused?L.Text("ATEŞİN SENİ BEKLİYOR","YOUR FIRE AWAITS"):p.InBreak?L.Text("ŞÖVALYE UYUYOR. SEN BİRAZ YÜRÜ.","KNIGHT ASLEEP. TIME FOR A WALK."):engine.Due?L.Text("GECE ÇÖKTÜ. MOLA ZAMANI.","NIGHT HAS FALLEN. TAKE A BREAK."):L.Text("ODAKLAN. ATEŞİ CANLI TUT.","FOCUS. KEEP THE FIRE ALIVE.");
+            string state=p.Chill?L.Text("SOLAIRE İLE BİR KADEH MOLASI","A TOAST WITH SOLAIRE"):p.Paused?L.Text("ATEŞİN SENİ BEKLİYOR","YOUR FIRE AWAITS"):p.InBreak?L.Text("ŞÖVALYE UYUYOR. SEN BİRAZ YÜRÜ.","KNIGHT ASLEEP. TIME FOR A WALK."):engine.Due?L.Text("GECE ÇÖKTÜ. MOLA ZAMANI.","NIGHT HAS FALLEN. TAKE A BREAK."):L.Text("ODAKLAN. ATEŞİ CANLI TUT.","FOCUS. KEEP THE FIRE ALIVE.");
             Theme.Frame(g,new Rectangle(20,312,344,28),Theme.Panel);Theme.Label(g,state,8,Theme.Gold,new Rectangle(24,312,336,28),ContentAlignment.MiddleCenter,"");
-            Theme.Label(g,p.Chill?DateTime.Now.ToString("HH:mm"):TimeText(p.Remaining),36,Theme.Text,new Rectangle(20,344,344,64),ContentAlignment.MiddleCenter,"");
-            string subtitle=p.Chill?L.Text("Yerel saat / çalışma sayacı kapalı","Local time / work timer off"):p.Paused?L.Text("Devam et ile yolculuğunu sürdür","Select Resume to continue"):p.InBreak?L.Text("Ayağa kalk, yürü ve biraz esne.","Stand up, walk and stretch."):L.Text("Bir sonraki molaya kalan süre","Time until your next break");
+            Theme.Label(g,p.Chill?L.Text("Şerefe!","Cheers!"):TimeText(p.Remaining),p.Chill?30:36,Theme.Text,new Rectangle(20,344,344,64),ContentAlignment.MiddleCenter,"");
+            string subtitle=p.Chill?L.Text("Solaire ile meyhanedesin. İş bekleyebilir.","At the tavern with Solaire. Work can wait."):p.Paused?L.Text("Devam et ile yolculuğunu sürdür","Select Resume to continue"):p.InBreak?L.Text("Ayağa kalk, yürü ve biraz esne.","Stand up, walk and stretch."):L.Text("Bir sonraki molaya kalan süre","Time until your next break");
             Theme.Label(g,subtitle,9,Theme.Muted,new Rectangle(20,408,344,26),ContentAlignment.MiddleCenter,"");
             double hp=p.Chill?1:Math.Max(0,Math.Min(1,engine.Health));
-            Theme.Label(g,L.Text("CAN","HP"),8,Theme.Muted,new Rectangle(20,442,34,18),ContentAlignment.MiddleLeft,"");
+            Theme.Label(g,L.Text("CAN","HP"),8,Theme.Muted,new Rectangle(20,442,42,18),ContentAlignment.MiddleLeft,"");
             using(var b=new SolidBrush(Theme.Panel))g.FillRectangle(b,58,447,252,8);
             using(var b=new SolidBrush(p.InBreak||p.Chill?Theme.Green:Theme.Gold))g.FillRectangle(b,58,447,(int)(252*hp),8);
             for(int i=1;i<21;i++)using(var pen=new Pen(Theme.Background,2))g.DrawLine(pen,58+i*12,447,58+i*12,455);
             Theme.Label(g,((int)(hp*100))+"%",8,Theme.Muted,new Rectangle(316,440,48,20),ContentAlignment.MiddleCenter,"");
-            string total=L.Text("TOPLAM ","TOTAL ")+StatsDialog.Hours(p.TotalWorkSeconds)+L.Text(" SAAT"," HOURS");
-            Theme.Label(g,total,11,Theme.Gold,new Rectangle(20,572,344,26),ContentAlignment.MiddleCenter,"");
+            Theme.Label(g,L.Text("BUGÜN","TODAY"),8,Theme.Muted,new Rectangle(20,568,164,18),ContentAlignment.MiddleCenter,"");
+            Theme.Label(g,L.Text("TOPLAM","TOTAL"),8,Theme.Muted,new Rectangle(200,568,164,18),ContentAlignment.MiddleCenter,"");
+            Theme.Label(g,StatsDialog.Duration(p.TodayWorkSeconds),12,Theme.Gold,new Rectangle(20,586,164,24),ContentAlignment.MiddleCenter,"");
+            Theme.Label(g,StatsDialog.Duration(p.TotalWorkSeconds),12,Theme.Gold,new Rectangle(200,586,164,24),ContentAlignment.MiddleCenter,"");
             string footer=DateTime.Now<messageUntil?message:p.WorkMinutes+L.Text(" dk odak / "," min focus / ")+p.BreakMinutes+L.Text(" dk mola   *   "," min break   *   ")+p.Breaks+L.Text(" mola bugün"," breaks today");
-            Theme.Label(g,footer,8,Theme.Muted,new Rectangle(12,603,360,22),ContentAlignment.MiddleCenter,"");
+            Theme.Label(g,footer,8,Theme.Muted,new Rectangle(12,612,360,20),ContentAlignment.MiddleCenter,"");
         }
-        protected override void OnFormClosing(FormClosingEventArgs e) {if(!exiting && e.CloseReason==CloseReason.UserClosing) {e.Cancel=true;Hide();return;}Save();base.OnFormClosing(e);}
+        protected override void OnFormClosing(FormClosingEventArgs e) {Save();if(!exiting && e.CloseReason==CloseReason.UserClosing) {e.Cancel=true;Hide();return;}base.OnFormClosing(e);}
         protected override void Dispose(bool disposing)
         {if(disposing) {SystemEvents.PowerModeChanged-=OnPower;SystemEvents.SessionSwitch-=OnSession;timer.Stop();timer.Dispose();audio.Dispose();tray.Visible=false;tray.Dispose();menu.Dispose();if(Icon!=null)Icon.Dispose();}base.Dispose(disposing);}
     }
@@ -151,26 +163,62 @@ namespace SoulsRevive
         public Color Ink;
         public PixelLabel(string text,Rectangle rect,Color color,float size) {Text=text;Bounds=rect;Ink=color;TextSize=size;SetStyle(ControlStyles.SupportsTransparentBackColor|ControlStyles.OptimizedDoubleBuffer|ControlStyles.UserPaint,true);BackColor=Color.Transparent;}
         protected override void OnPaint(PaintEventArgs e)
-        {using(var font=PixelFont.Create(TextSize*1.65f))using(var brush=new SolidBrush(Ink)) {e.Graphics.TextRenderingHint=System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;e.Graphics.DrawString(Text,font,brush,ClientRectangle);}}
+        {using(var font=PixelFont.Create(PixelFont.TextPixels(TextSize)))using(var brush=new SolidBrush(Ink)) {e.Graphics.TextRenderingHint=System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;e.Graphics.DrawString(Text,font,brush,ClientRectangle);}}
     }
 
     sealed class StatsDialog : Form
     {
+        readonly System.Windows.Forms.Timer refresh = new System.Windows.Forms.Timer { Interval = 1000 };
         public static string Hours(double seconds) {return(seconds/3600).ToString("0.00",System.Globalization.CultureInfo.CurrentCulture);}
+        public static string Duration(double seconds)
+        {
+            seconds = Preferences.ValidSeconds(seconds);
+            return Math.Floor(seconds / 3600).ToString("00", System.Globalization.CultureInfo.InvariantCulture)
+                + ":" + ((int)(seconds / 60 % 60)).ToString("00")
+                + ":" + ((int)(seconds % 60)).ToString("00");
+        }
         public StatsDialog(Preferences p)
         {
             p.CheckDay();Text=L.Text("Soul Revive · İstatistikler","Soul Revive · Statistics");ClientSize=new Size(430,426);BackColor=Theme.Background;
             FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;StartPosition=FormStartPosition.CenterParent;ShowInTaskbar=false;Icon=PixelArt.MakeIcon();
             Add(L.Text("ATEŞİNİN HİKÂYESİ","YOUR BONFIRE JOURNEY"),20,18,Theme.Gold,16);
             Add(L.Text("TOPLAM ÇALIŞMA","TOTAL WORK TIME"),20,70,Theme.Muted,9);
-            Add(Hours(p.TotalWorkSeconds)+L.Text(" saat"," hours"),20,100,Theme.Gold,28);
-            Add(L.Text("BUGÜN ","TODAY ")+Hours(p.TodayWorkSeconds)+L.Text(" saat"," hours"),20,170,Theme.Text,15);
-            Add(p.CompletedSessions+L.Text(" tamamlanan çalışma turu"," completed work sessions"),20,218,Theme.Text,11);
-            Add(L.Text("Bugün: ","Today: ")+p.Breaks+L.Text(" mola / "," breaks / ")+(int)(p.MovementSeconds/60)+L.Text(" dk hareket"," min movement"),20,254,Theme.Text,11);
-            Add(L.Text("Yalnızca aktif çalışma süresi sayılır.\nDuraklatma, mola ve chill modu hariç.","Counts active work time only.\nPause, break and chill time are excluded."),20,296,Theme.Muted,9);
+            var total = Add("",20,100,Theme.Gold,28);
+            var totalTime = Add("",20,146,Theme.Muted,9);
+            totalTime.Height = 22;
+            var today = Add("",20,174,Theme.Text,15);
+            var todayTime = Add("",20,210,Theme.Muted,9);
+            todayTime.Height = 22;
+            var sessions = Add("",20,242,Theme.Text,11);
+            var movement = Add("",20,280,Theme.Text,11);
+            Add(L.Text("Yalnızca aktif çalışma süresi sayılır.\nDuraklatma, mola ve chill modu hariç.","Counts active work time only.\nPause, break and chill time are excluded."),20,318,Theme.Muted,9);
+            Action update = delegate {
+                p.CheckDay();
+                total.Text = Hours(p.TotalWorkSeconds) + L.Text(" saat", " hours");
+                totalTime.Text = Duration(p.TotalWorkSeconds);
+                today.Text = L.Text("BUGÜN ", "TODAY ") + Hours(p.TodayWorkSeconds) + L.Text(" saat", " hours");
+                todayTime.Text = Duration(p.TodayWorkSeconds);
+                sessions.Text = p.CompletedSessions + L.Text(" tamamlanan çalışma turu", " completed work sessions");
+                movement.Text = L.Text("Bugün: ", "Today: ") + p.Breaks + L.Text(" mola / ", " breaks / ")
+                    + (int)(p.MovementSeconds / 60) + L.Text(" dk hareket", " min movement");
+                Invalidate(true);
+            };
+            update();
+            refresh.Tick += delegate { update(); };
+            refresh.Start();
             var close=new EmberButton(L.Text("Ateşe dön","Back to the fire"),new Rectangle(20,368,390,38),true);close.DialogResult=DialogResult.OK;Controls.Add(close);AcceptButton=close;CancelButton=close;
         }
-        void Add(string s,int x,int y,Color color,float size) {Controls.Add(new PixelLabel(s,new Rectangle(x,y,390,s.Contains("\n")?48:44),color,size));}
+        PixelLabel Add(string s,int x,int y,Color color,float size)
+        {
+            var label = new PixelLabel(s,new Rectangle(x,y,390,s.Contains("\n")?48:44),color,size);
+            Controls.Add(label);
+            return label;
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) refresh.Dispose();
+            base.Dispose(disposing);
+        }
     }
 
     sealed class SettingsDialog : Form
@@ -207,7 +255,7 @@ namespace SoulsRevive
             sound=Check(generalPanel,L.Text("Mola bildirim sesi","Break reminder sound"),242,p.Sound);
             startup=Check(generalPanel,L.Text("Windows açılışında başlat","Start at Windows sign-in"),282,Startup.Enabled);
             Add(generalPanel,L.Text("Süreyi değiştirmek yeni bir tur başlatır.\nEkran kilidi ve uyku çalışmayı duraklatır.\nMolada sen hareket et; şövalyen dinlensin.","Changing durations starts a new round.\nLock and sleep pause your work timer.\nMove during breaks while your knight rests."),0,334,500,82,Theme.Muted,9);
-            audioEnabled=Check(soundPanel,L.Text("Ses manzarasını aç","Enable soundscape"),0,p.AudioEnabled);
+            audioEnabled=Check(soundPanel,L.Text("Müzik ve ortam seslerini çal","Play music and ambience"),0,p.AudioEnabled);
             fire=Volume(soundPanel,L.Text("ATEŞ / ÇITIRTI","FIRE / CRACKLE"),64,p.FireVolume);
             ambience=Volume(soundPanel,L.Text("AMBIYANS / RÜZGÂR","AMBIENCE / WIND"),154,p.AmbienceVolume);
             music=Volume(soundPanel,L.Text("MÜZİK / BONFIRE MELODİSİ","MUSIC / BONFIRE MELODY"),244,p.MusicVolume);
@@ -215,7 +263,17 @@ namespace SoulsRevive
             Action play=delegate {preview.Apply(new Preferences{AudioEnabled=true,FireVolume=fire.Value,AmbienceVolume=ambience.Value,MusicVolume=music.Value});};
             listen.Click+=delegate {listening=!listening;listen.Text=listening?L.Text("Önizlemeyi durdur","Stop preview"):L.Text("Önizle / durdur","Preview / stop");if(listening)play();else preview.Mute();};soundPanel.Controls.Add(listen);
             foreach(var slider in new[]{fire,ambience,music})slider.MouseUp+=delegate {if(listening)play();};
-            Add(soundPanel,L.Text("Üç ses birlikte çalar. Her kanal ayrı ayarlanır.\nMüzik ve ortam sesleri çevrimdışı çalışır.","All three layers mix together with separate levels.\nMusic and ambience work completely offline."),0,394,500,48,Theme.Muted,9);
+            var soundStatus = new PixelLabel(L.Text("Kaydet sonrası arka planda çalar.\nTüm sesler çevrimdışı çalışır.","Select Save to keep audio playing in the background.\nAll sounds work offline."),new Rectangle(0,394,500,48),Theme.Muted,9);
+            soundPanel.Controls.Add(soundStatus);
+            preview.Failed += delegate(string error) {
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke((Action)delegate {
+                    listening = false;
+                    listen.Text = L.Text("Önizle / durdur", "Preview / stop");
+                    soundStatus.Text = L.Text("Ses başlatılamadı: ", "Audio could not start: ") + error;
+                    soundStatus.Invalidate();
+                });
+            };
             Add(updatePanel,L.Text("YÜKLÜ SÜRÜM / ","INSTALLED VERSION / ")+Updates.VersionText,0,4,500,32,Theme.Gold,13);
             Add(updatePanel,L.Text("Yeni sürümleri buradan kontrol et.\nOnayladığında indirilir, doğrulanır ve yeniden açılır.\nAyarların ve istatistiklerin korunur.","Check for new versions here.\nApproved updates download, verify and restart.\nYour settings and statistics are preserved."),0,52,500,86,Theme.Text,10);
             var status=new PixelLabel(L.Text("Kontrol için internet bağlantısı gerekir.","An internet connection is needed to check."),new Rectangle(0,218,500,140),Theme.Muted,10);updatePanel.Controls.Add(status);

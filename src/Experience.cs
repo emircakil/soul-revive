@@ -3,13 +3,12 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.IO;
-using System.Media;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 [assembly: AssemblyProduct("Soul Revive")]
 [assembly: AssemblyDescription("Pixel bonfire desktop companion")]
 
@@ -23,7 +22,7 @@ namespace SoulsRevive
         public static void Initialize()
         {
             if (Family != null) return;
-            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Tiny5.ttf"))
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PixelFont.ttf"))
             {
                 if (stream == null) throw new InvalidOperationException("Embedded pixel font is missing.");
                 byte[] data = new byte[stream.Length]; stream.Read(data, 0, data.Length);
@@ -34,14 +33,18 @@ namespace SoulsRevive
             }
         }
         public static Font Create(float pixels) { Initialize(); return new Font(Family, pixels, FontStyle.Regular, GraphicsUnit.Pixel); }
+        public static float TextPixels(float size)
+        {
+            return Math.Max(16, (float)Math.Round(size * 1.65f));
+        }
         [DllImport("gdi32.dll")] static extern IntPtr AddFontMemResourceEx(IntPtr font, uint size, IntPtr reserved, ref uint count);
     }
 
     static class DayCycle
     {
-        public static double Hour(Preferences p, DateTime now)
+        public static double Hour(Preferences p)
         {
-            if (p.Chill) return now.TimeOfDay.TotalHours;
+            if (p.Chill) return 22;
             if (p.InBreak) return 22;
             return 5.5 + 15 * (1 - Math.Max(0, Math.Min(1, p.Remaining / (p.WorkMinutes * 60.0))));
         }
@@ -71,15 +74,23 @@ namespace SoulsRevive
     // No downloads, codecs, copyrighted recordings, or extra runtime dependencies.
     sealed class Soundscape : IDisposable
     {
-        SoundPlayer player;
-        MemoryStream stream;
+        readonly object gate = new object();
+        LoopingAudio player;
         int generation;
         bool disposed;
         public string LastError = "";
+        public event Action<string> Failed;
+        internal uint PlaybackBytes { get { lock(gate) return player == null ? 0 : player.PlaybackBytes; } }
         public void Apply(Preferences p)
         {
-            int request = Interlocked.Increment(ref generation);
-            Stop();
+            int request;
+            lock (gate)
+            {
+                if (disposed) return;
+                request = ++generation;
+                Stop();
+                LastError = "";
+            }
             if (!p.AudioEnabled || (p.FireVolume + p.AmbienceVolume + p.MusicVolume == 0)) return;
             int fire = p.FireVolume, ambience = p.AmbienceVolume, music = p.MusicVolume;
             ThreadPool.QueueUserWorkItem(delegate
@@ -87,13 +98,22 @@ namespace SoulsRevive
                 try
                 {
                     byte[] wave = Render(fire, ambience, music, 32);
-                    lock (this)
+                    lock (gate)
                     {
                         if (disposed || request != generation) return;
-                        stream = new MemoryStream(wave); player = new SoundPlayer(stream); player.Load(); player.PlayLooping(); LastError = "";
+                        player = new LoopingAudio(wave);
                     }
                 }
-                catch (Exception ex) { LastError = ex.Message; }
+                catch (Exception ex)
+                {
+                    lock (gate)
+                    {
+                        if (disposed || request != generation) return;
+                        LastError = ex.Message;
+                    }
+                    var failed = Failed;
+                    if (failed != null) failed(ex.Message);
+                }
             });
         }
         public static byte[] Render(int fire, int ambience, int music, int seconds)
@@ -129,8 +149,8 @@ namespace SoulsRevive
                 return ms.ToArray();
             }
         }
-        void Stop() { lock(this) { if(player!=null) { player.Stop(); player.Dispose(); player=null; } if(stream!=null) { stream.Dispose(); stream=null; } } }
-        public void Mute() { Interlocked.Increment(ref generation); Stop(); }
-        public void Dispose() { lock(this) { disposed=true; Interlocked.Increment(ref generation); Stop(); } }
+        void Stop() { if (player != null) { player.Dispose(); player = null; } }
+        public void Mute() { lock (gate) { ++generation; Stop(); } }
+        public void Dispose() { lock (gate) { disposed=true; ++generation; Stop(); } }
     }
 }
