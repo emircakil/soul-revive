@@ -1,0 +1,31 @@
+name: Bug report
+description: Report a timer, animation, installation, or localization problem.
+title: "[Bug] "
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the buttons you pressed and the timer state before the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Attach a screenshot if it helps explain the problem.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Windows version, app version or commit, interface language
+    validations:
+      required: true

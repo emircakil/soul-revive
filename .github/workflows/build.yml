@@ -1,0 +1,30 @@
+name: Windows build and checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Windows executable
+        shell: pwsh
+        run: ./build.ps1
+      - name: Run timer and localization checks
+        shell: pwsh
+        run: |
+          $output = Join-Path $PWD 'test-output'
+          $app = Start-Process -FilePath './bin/SoulsRevive.exe' -ArgumentList @('--self-test', ('"' + $output + '"')) -Wait -PassThru -WindowStyle Hidden
+          if ($app.ExitCode -ne 0) {
+            Get-Content "$output/failure.txt" -ErrorAction SilentlyContinue
+            throw 'Self-tests failed.'
+          }
+          Get-Content "$output/results.txt"
+      - name: Upload portable executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: soul-revive-windows
+          path: bin/SoulsRevive.exe
