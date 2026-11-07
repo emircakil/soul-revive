@@ -40,6 +40,7 @@ namespace SoulsRevive.Cross
         public readonly uint[] Pixels;
 
         Transform2D current = Transform2D.Identity;
+        public Transform2D Transform { get => current; set => current = value; }
         readonly Stack<Transform2D> stack = new Stack<Transform2D>();
 
         public CrossCanvas(int width = 172, int height = 92)

@@ -6,22 +6,24 @@ using Raylib_cs;
 
 namespace SoulsRevive.Cross
 {
-    public sealed class CrossCompanion : IDisposable
+    sealed class CrossCompanion : IDisposable
     {
         readonly Preferences p;
         readonly TimerEngine engine;
         readonly WorkRoutine workRoutine = new WorkRoutine();
-        readonly CrossCanvas canvas = new CrossCanvas(172, 92);
         readonly CrossAudio audio;
 
         Font font;
         Texture2D sceneTexture;
-        Image sceneImage;
+        Texture2D previewTexture;
 
         int frame, chillFrame;
         float frameTimer, saveTimer;
-        bool isDragging;
-        Vector2 dragOffset;
+        bool quit;
+        Preferences draft;
+        double devTimer;
+        string saveError = string.Empty;
+
 
         // Overlays: 0 = none, 1 = settings, 2 = statistics, 3 = developer
         int activeOverlay;
@@ -33,58 +35,114 @@ namespace SoulsRevive.Cross
         bool devPlaying = true;
         float devSpeed = 1.0f;
         int devLighting; // 0 = day, 1 = dawn, 2 = night
+        int DevLength => devActionIndex == 5 ? PixelArt.TavernArrivalFrames + PixelArt.TavernCycleFrames : 112;
+
+        static Texture2D CreateTexture()
+        {
+            Image image = Raylib.GenImageColor(172, 92, Color.Black);
+            Texture2D texture = Raylib.LoadTextureFromImage(image);
+            Raylib.UnloadImage(image);
+            Raylib.SetTextureFilter(texture, TextureFilter.Point);
+            return texture;
+        }
+
+        static unsafe void RenderScene(Texture2D texture, double health, bool rest, int frame,
+            double hour, bool chill, WorkAction action, int actionFrame, KnightEquipment equipment)
+        {
+            using var image = PixelArt.EquipmentScene(equipment, health, rest, frame, hour, chill, action, actionFrame);
+            fixed (uint* pixels = image.Canvas.Pixels) Raylib.UpdateTexture(texture, pixels);
+        }
+
+        void ApplyTopmost()
+        {
+            if (p.AlwaysOnTop) Raylib.SetWindowState(ConfigFlags.TopmostWindow);
+            else Raylib.ClearWindowState(ConfigFlags.TopmostWindow);
+        }
+
+        void RestorePosition()
+        {
+            for (int i = 0; i < Raylib.GetMonitorCount(); i++)
+            {
+                Vector2 origin = Raylib.GetMonitorPosition(i);
+                if (p.X >= origin.X && p.Y >= origin.Y && p.X + 384 <= origin.X + Raylib.GetMonitorWidth(i)
+                    && p.Y + 668 <= origin.Y + Raylib.GetMonitorHeight(i))
+                { Raylib.SetWindowPosition(p.X, p.Y); return; }
+            }
+        }
+
+        void Save()
+        {
+            Vector2 position = Raylib.GetWindowPosition();
+            p.X = (int)position.X; p.Y = (int)position.Y;
+            saveError = Storage.Save(p) ? string.Empty : Storage.LastError;
+        }
+
+        void OpenSettings()
+        {
+            draft = new Preferences();
+            foreach (var field in typeof(Preferences).GetFields()) field.SetValue(draft, field.GetValue(p));
+            activeOverlay = 1;
+        }
+
+        void CancelSettings()
+        {
+            draft = null;
+            L.Language = p.Language;
+            CrossTheme.Light = p.LightMode;
+        }
+
+        void ApplySettings()
+        {
+            engine.ApplyDurations(draft.WorkMinutes, draft.BreakMinutes);
+            p.Language = draft.Language; p.LightMode = draft.LightMode;
+            p.AlwaysOnTop = draft.AlwaysOnTop; p.Sound = draft.Sound;
+            p.AudioEnabled = draft.AudioEnabled;
+            p.FireVolume = draft.FireVolume; p.AmbienceVolume = draft.AmbienceVolume; p.MusicVolume = draft.MusicVolume;
+            p.ArmorStyle = draft.ArmorStyle; p.SwordStyle = draft.SwordStyle; p.ShieldStyle = draft.ShieldStyle;
+            ApplyTopmost();
+            audio.Apply(p);
+            Save();
+            CancelSettings();
+        }
 
         public CrossCompanion()
         {
-            p = CrossStorage.Load();
+            p = Storage.Load();
             engine = new TimerEngine(p);
             L.Language = p.Language;
             CrossTheme.Light = p.LightMode;
-            CrossPixelArt.Equipped = KnightEquipment.From(p);
+            PixelArt.Equipped = KnightEquipment.From(p);
 
-            Raylib.SetConfigFlags(ConfigFlags.UndecoratedWindow | ConfigFlags.AlwaysRunWindow);
+            Raylib.SetConfigFlags(ConfigFlags.AlwaysRunWindow | ConfigFlags.HighDpiWindow);
             Raylib.InitWindow(384, 668, "Soul Revive");
             Raylib.SetTargetFPS(60);
+            Raylib.SetExitKey(KeyboardKey.Null);
+            ApplyTopmost();
+            RestorePosition();
 
-            // Load embedded VT323 font
-            try
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PixelFont.ttf"))
             {
-                using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("VT323-Regular.ttf");
-                if (stream != null)
-                {
-                    byte[] data = new byte[stream.Length];
-                    stream.ReadExactly(data, 0, data.Length);
-                    font = Raylib.LoadFontFromMemory(".ttf", data, 32, null, 0);
-                    Raylib.SetTextureFilter(font.Texture, TextureFilter.Point);
-                }
-                else
-                {
-                    font = Raylib.GetFontDefault();
-                }
+                if (stream == null) throw new InvalidOperationException("Embedded font is missing.");
+                byte[] data = new byte[stream.Length];
+                stream.ReadExactly(data);
+                string extra = "ĞğİıŞş←→↑↓–—";
+                var codepoints = new int[256 + extra.Length];
+                for (int i = 0; i < 256; i++) codepoints[i] = 32 + i;
+                for (int i = 0; i < extra.Length; i++) codepoints[256 + i] = extra[i];
+                font = Raylib.LoadFontFromMemory(".ttf", data, 32, codepoints, codepoints.Length);
+                if (!Raylib.IsFontValid(font)) throw new InvalidOperationException("Cannot load the pixel font.");
+                Raylib.SetTextureFilter(font.Texture, TextureFilter.Point);
             }
-            catch
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("AppIcon.png"))
+            using (var data = new MemoryStream())
             {
-                font = Raylib.GetFontDefault();
+                stream.CopyTo(data);
+                Image icon = Raylib.LoadImageFromMemory(".png", data.ToArray());
+                Raylib.SetWindowIcon(icon);
+                Raylib.UnloadImage(icon);
             }
-
-            // Create 172x92 texture
-            unsafe
-            {
-                fixed (uint* ptr = canvas.Pixels)
-                {
-                    sceneImage = new Image
-                    {
-                        Data = ptr,
-                        Width = 172,
-                        Height = 92,
-                        Mipmaps = 1,
-                        Format = PixelFormat.UncompressedR8G8B8A8
-                    };
-                    sceneTexture = Raylib.LoadTextureFromImage(sceneImage);
-                    Raylib.SetTextureFilter(sceneTexture, TextureFilter.Point);
-                }
-            }
-
+            sceneTexture = CreateTexture();
+            previewTexture = CreateTexture();
             audio = new CrossAudio();
             audio.Apply(p);
 
@@ -93,52 +151,92 @@ namespace SoulsRevive.Cross
                 if (reason == "mode") chillFrame = 0;
                 if (reason == "mode" || reason == "due" || reason == "revived" || reason == "break" || reason == "cancel")
                     workRoutine.Reset();
-                CrossStorage.Save(p);
+                Save();
+                if (p.Sound && (reason == "due" || reason == "revived")) audio.Remind();
             };
         }
 
-        public void Run()
+        public void Run(int smokeFrames = 0, string screenshot = null)
         {
-            while (!Raylib.WindowShouldClose())
+            DateTime previous = DateTime.UtcNow;
+            int rendered = 0;
+            while (!quit && !Raylib.WindowShouldClose())
             {
-                float dt = Raylib.GetFrameTime();
-                Update(dt);
+                DateTime now = DateTime.UtcNow;
+                double elapsed = (now - previous).TotalSeconds;
+                previous = now;
+                if (elapsed > 5 || elapsed < 0)
+                {
+                    if (!p.Chill && !p.Paused) engine.TogglePause();
+                    elapsed = 0;
+                }
+                Update((float)elapsed);
                 Draw();
+                if (smokeFrames > 0 && ++rendered >= smokeFrames)
+                {
+                    if (screenshot != null) RunUiChecks(screenshot);
+                    break;
+                }
             }
-            CrossStorage.Save(p);
+            Save();
         }
 
+        void Capture(string path)
+        {
+            // TakeScreenshot prefixes the working directory on some raylib builds.
+            // ExportImage accepts absolute paths on every supported platform.
+            Image image = Raylib.LoadImageFromScreen();
+            try { if (!Raylib.ExportImage(image, path)) throw new IOException("Screenshot export failed: " + path); }
+            finally { Raylib.UnloadImage(image); }
+        }
+
+        void RunUiChecks(string screenshot)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(screenshot));
+            Capture(screenshot);
+            foreach (char letter in "ÇçĞğİıÖöŞşÜü")
+                if (Raylib.GetGlyphIndex(font, letter) == Raylib.GetGlyphIndex(font, '?'))
+                    throw new InvalidOperationException("Missing Turkish glyph: " + letter);
+            double remaining = p.Remaining, total = p.TotalWorkSeconds;
+            int armor = p.ArmorStyle;
+            OpenSettings(); draft.ArmorStyle = (armor + 1) % 3; draft.WorkMinutes++;
+            CancelSettings(); activeOverlay = 0;
+            if (p.Remaining != remaining || p.ArmorStyle != armor) throw new InvalidOperationException("Cancel changed saved settings.");
+            OpenSettings(); draft.ArmorStyle = (armor + 1) % 3;
+            ApplySettings(); activeOverlay = 0;
+            if (p.Remaining != remaining || p.TotalWorkSeconds != total || p.ArmorStyle == armor)
+                throw new InvalidOperationException("Equipment save changed the timer or failed to apply.");
+            foreach (string language in new[] { "tr", "en" })
+            foreach (bool light in new[] { false, true })
+            {
+                p.Language = language; p.LightMode = light; L.Language = language; CrossTheme.Light = light;
+                for (int view = 0; view < 8; view++)
+                {
+                    CancelSettings(); activeOverlay = 0;
+                    p.Chill = view == 1; p.InBreak = view == 2;
+                    if (view >= 3 && view <= 5) { OpenSettings(); settingsTab = view - 3; }
+                    if (view == 6) activeOverlay = 2;
+                    if (view == 7) { activeOverlay = 3; devActionIndex = 2; devFrame = 50; }
+                    Draw(); Draw(); // Populate both swap-chain buffers before reading back.
+                    string name = $"{Path.GetFileNameWithoutExtension(screenshot)}-{language}-{(light ? "light" : "dark")}-{view}.png";
+                    Capture(Path.Combine(Path.GetDirectoryName(screenshot), name));
+                }
+            }
+            CancelSettings(); activeOverlay = 0;
+            Console.WriteLine("PASS native window, Turkish glyphs, settings transactions and 32 UI previews");
+        }
         void Update(float dt)
         {
             // F8 toggles developer panel
             if (Raylib.IsKeyPressed(KeyboardKey.F8))
             {
+                CancelSettings();
                 activeOverlay = activeOverlay == 3 ? 0 : 3;
             }
             if (Raylib.IsKeyPressed(KeyboardKey.Escape) && activeOverlay != 0)
             {
+                CancelSettings();
                 activeOverlay = 0;
-            }
-
-            // Window dragging
-            Vector2 mouse = Raylib.GetMousePosition();
-            if (Raylib.IsMouseButtonPressed(MouseButton.Left) && mouse.Y < 40 && mouse.X < 260)
-            {
-                isDragging = true;
-                dragOffset = mouse;
-            }
-            if (isDragging)
-            {
-                if (Raylib.IsMouseButtonDown(MouseButton.Left))
-                {
-                    Vector2 currentPos = Raylib.GetWindowPosition();
-                    Vector2 newPos = currentPos + mouse - dragOffset;
-                    Raylib.SetWindowPosition((int)newPos.X, (int)newPos.Y);
-                }
-                else
-                {
-                    isDragging = false;
-                }
             }
 
             // Timer advance
@@ -146,7 +244,7 @@ namespace SoulsRevive.Cross
 
             // Animation frame ticks (~8 FPS = 125ms)
             frameTimer += dt;
-            if (frameTimer >= 0.125f)
+            while (frameTimer >= 0.125f)
             {
                 frameTimer -= 0.125f;
                 frame++;
@@ -157,7 +255,8 @@ namespace SoulsRevive.Cross
             // Developer animation advance
             if (activeOverlay == 3 && devPlaying)
             {
-                devFrame++;
+                devTimer += dt * devSpeed;
+                while (devTimer >= 0.125) { devTimer -= 0.125; devFrame = (devFrame + 1) % DevLength; }
             }
 
             // Audio loop check
@@ -168,7 +267,7 @@ namespace SoulsRevive.Cross
             if (saveTimer >= 5.0f)
             {
                 saveTimer = 0;
-                CrossStorage.Save(p);
+                Save();
             }
         }
 
@@ -186,6 +285,7 @@ namespace SoulsRevive.Cross
             else if (activeOverlay == 2) DrawStatsOverlay();
             else if (activeOverlay == 3) DrawDevOverlay();
 
+            if (saveError.Length > 0) DrawCenteredText(L.Text("Kayıt başarısız: diski kontrol et", "Save failed: check disk access"), 10, 640, 364, 16, Color.Red);
             Raylib.EndDrawing();
         }
 
@@ -193,7 +293,7 @@ namespace SoulsRevive.Cross
         {
             Color bg = HexColor(CrossTheme.BackgroundHex);
             Vector2 mouse = Raylib.GetMousePosition();
-            bool click = Raylib.IsMouseButtonPressed(MouseButton.Left);
+            bool click = activeOverlay == 0 && Raylib.IsMouseButtonPressed(MouseButton.Left);
 
             // Border Frame
             DrawPixelFrame(0, 0, 384, 668, HexColor(CrossTheme.BackgroundHex));
@@ -204,10 +304,15 @@ namespace SoulsRevive.Cross
 
             // Title Buttons
             // Gear / Settings
-            if (DrawButton("⚙", 272, 16, 28, 28, false, mouse, click))
+            if (DrawButton("", 272, 16, 28, 28, false, mouse, click))
             {
-                activeOverlay = activeOverlay == 1 ? 0 : 1;
+                OpenSettings();
             }
+            Color gear = HexColor(CrossTheme.GoldHex);
+            Raylib.DrawRectangle(281, 25, 10, 10, gear);
+            Raylib.DrawRectangle(284, 22, 4, 16, gear);
+            Raylib.DrawRectangle(278, 28, 16, 4, gear);
+            Raylib.DrawRectangle(284, 28, 4, 4, HexColor(CrossTheme.PanelHex));
             // Minimize
             if (DrawButton("_", 304, 16, 28, 28, false, mouse, click))
             {
@@ -216,7 +321,7 @@ namespace SoulsRevive.Cross
             // Close
             if (DrawButton("X", 336, 16, 28, 28, false, mouse, click))
             {
-                Raylib.CloseWindow();
+                quit = true;
                 return;
             }
 
@@ -232,15 +337,8 @@ namespace SoulsRevive.Cross
             }
 
             // Scene Canvas Render
-            CrossPixelArt.RenderScene(canvas, p.Chill ? 1.0 : engine.Health, p.InBreak, p.Chill ? chillFrame : frame,
-                DayCycle.Hour(p), p.Chill, workRoutine.Action, workRoutine.Frame);
-            unsafe
-            {
-                fixed (uint* ptr = canvas.Pixels)
-                {
-                    Raylib.UpdateTexture(sceneTexture, ptr);
-                }
-            }
+            RenderScene(sceneTexture, p.Chill ? 1 : engine.Health, p.InBreak, p.Chill ? chillFrame : frame,
+                DayCycle.Hour(p), p.Chill, workRoutine.Action, workRoutine.Frame, KnightEquipment.From(p));
             // Outer canvas frame
             DrawPixelFrame(18, 112, 348, 188, HexColor(CrossTheme.PanelHex));
             Raylib.DrawTexturePro(sceneTexture, new Rectangle(0, 0, 172, 92), new Rectangle(20, 114, 344, 184), Vector2.Zero, 0, Color.White);
@@ -306,6 +404,7 @@ namespace SoulsRevive.Cross
 
         void DrawSettingsOverlay()
         {
+            Preferences p = draft;
             Vector2 mouse = Raylib.GetMousePosition();
             bool click = Raylib.IsMouseButtonPressed(MouseButton.Left);
 
@@ -330,15 +429,15 @@ namespace SoulsRevive.Cross
             {
                 // General Tab
                 DrawPixelText(L.Text("Çalışma süresi (dk):", "Work time (min):"), dx + 20, cy, 16, HexColor(CrossTheme.TextHex));
-                if (DrawButton("-", dx + 210, cy - 4, 32, 28, false, mouse, click) && p.WorkMinutes > 1) { p.WorkMinutes--; engine.ApplyDurations(p.WorkMinutes, p.BreakMinutes); }
+                if (DrawButton("-", dx + 210, cy - 4, 32, 28, false, mouse, click) && p.WorkMinutes > 1) { p.WorkMinutes--; }
                 DrawCenteredText(p.WorkMinutes.ToString(), dx + 242, cy, 40, 18, HexColor(CrossTheme.GoldHex));
-                if (DrawButton("+", dx + 282, cy - 4, 32, 28, false, mouse, click) && p.WorkMinutes < 180) { p.WorkMinutes++; engine.ApplyDurations(p.WorkMinutes, p.BreakMinutes); }
+                if (DrawButton("+", dx + 282, cy - 4, 32, 28, false, mouse, click) && p.WorkMinutes < 180) { p.WorkMinutes++; }
 
                 cy += 44;
                 DrawPixelText(L.Text("Mola süresi (dk):", "Break time (min):"), dx + 20, cy, 16, HexColor(CrossTheme.TextHex));
-                if (DrawButton("-", dx + 210, cy - 4, 32, 28, false, mouse, click) && p.BreakMinutes > 1) { p.BreakMinutes--; engine.ApplyDurations(p.WorkMinutes, p.BreakMinutes); }
+                if (DrawButton("-", dx + 210, cy - 4, 32, 28, false, mouse, click) && p.BreakMinutes > 1) { p.BreakMinutes--; }
                 DrawCenteredText(p.BreakMinutes.ToString(), dx + 242, cy, 40, 18, HexColor(CrossTheme.GoldHex));
-                if (DrawButton("+", dx + 282, cy - 4, 32, 28, false, mouse, click) && p.BreakMinutes < 30) { p.BreakMinutes++; engine.ApplyDurations(p.WorkMinutes, p.BreakMinutes); }
+                if (DrawButton("+", dx + 282, cy - 4, 32, 28, false, mouse, click) && p.BreakMinutes < 30) { p.BreakMinutes++; }
 
                 cy += 48;
                 DrawPixelText(L.Text("Dil / Language:", "Language:"), dx + 20, cy, 16, HexColor(CrossTheme.TextHex));
@@ -356,10 +455,15 @@ namespace SoulsRevive.Cross
                     p.LightMode = CrossTheme.Light;
                 }
 
-                cy += 50;
+                cy += 40;
+                if (DrawButton(p.AlwaysOnTop ? L.Text("[X] Üstte tut", "[X] Always on top") : L.Text("[ ] Üstte tut", "[ ] Always on top"), dx + 20, cy, 312, 30, false, mouse, click)) p.AlwaysOnTop = !p.AlwaysOnTop;
+                cy += 40;
+                if (DrawButton(p.Sound ? L.Text("[X] Hatırlatma sesi", "[X] Reminder sound") : L.Text("[ ] Hatırlatma sesi", "[ ] Reminder sound"), dx + 20, cy, 312, 30, false, mouse, click)) p.Sound = !p.Sound;
+                cy += 40;
                 string devButtonText = L.Text("Geliştirici Paneli (F8)", "Developer Panel (F8)");
                 if (DrawButton(devButtonText, dx + 20, cy, 312, 32, false, mouse, click))
                 {
+                    CancelSettings();
                     activeOverlay = 3;
                 }
             }
@@ -371,7 +475,7 @@ namespace SoulsRevive.Cross
                 if (DrawButton(audioToggle, dx + 20, cy, 312, 32, p.AudioEnabled, mouse, click))
                 {
                     p.AudioEnabled = !p.AudioEnabled;
-                    audio.Apply(p);
+
                 }
 
                 cy += 48;
@@ -392,7 +496,7 @@ namespace SoulsRevive.Cross
                 if (DrawButton(armorNames[p.ArmorStyle], dx + 120, cy - 4, 194, 26, false, mouse, click))
                 {
                     p.ArmorStyle = (p.ArmorStyle + 1) % 3;
-                    CrossPixelArt.Equipped = KnightEquipment.From(p);
+
                 }
 
                 cy += 38;
@@ -400,7 +504,7 @@ namespace SoulsRevive.Cross
                 if (DrawButton(swordNames[p.SwordStyle], dx + 120, cy - 4, 194, 26, false, mouse, click))
                 {
                     p.SwordStyle = (p.SwordStyle + 1) % 3;
-                    CrossPixelArt.Equipped = KnightEquipment.From(p);
+
                 }
 
                 cy += 38;
@@ -408,37 +512,40 @@ namespace SoulsRevive.Cross
                 if (DrawButton(shieldNames[p.ShieldStyle], dx + 120, cy - 4, 194, 26, false, mouse, click))
                 {
                     p.ShieldStyle = (p.ShieldStyle + 1) % 3;
-                    CrossPixelArt.Equipped = KnightEquipment.From(p);
+
                 }
 
                 cy += 46;
+                RenderScene(previewTexture, 1, false, frame, 12, false, WorkAction.Idle, 0, KnightEquipment.From(p));
                 // Live equipment preview
-                DrawPixelFrame(dx + 20, cy, 312, 140, HexColor(CrossTheme.PanelHex));
-                Raylib.DrawTexturePro(sceneTexture, new Rectangle(0, 0, 172, 92), new Rectangle(dx + 22, cy + 2, 308, 136), Vector2.Zero, 0, Color.White);
+                DrawPixelFrame(dx + 20, cy, 312, 164, HexColor(CrossTheme.PanelHex));
+                Raylib.DrawTexturePro(previewTexture, new Rectangle(35, 12, 104, 80), new Rectangle(dx + 72, cy + 2, 208, 160), Vector2.Zero, 0, Color.White);
             }
 
-            // Bottom Close/Save Button
-            if (DrawButton(L.Text("KAYDET VE KAPAT", "SAVE & CLOSE"), dx + 20, dy + dh - 48, 312, 36, true, mouse, click))
+            if (DrawButton(L.Text("KAYDET", "SAVE"), dx + 20, dy + dh - 48, 150, 36, true, mouse, click))
             {
-                CrossStorage.Save(p);
-                audio.Apply(p);
+                ApplySettings();
+                activeOverlay = 0;
+            }
+            if (DrawButton(L.Text("İPTAL", "CANCEL"), dx + 182, dy + dh - 48, 150, 36, false, mouse, click))
+            {
+                CancelSettings();
                 activeOverlay = 0;
             }
         }
-
         void DrawVolumeControl(int x, int y, string label, ref int volume, Vector2 mouse, bool click)
         {
             DrawPixelText(label, x, y, 14, HexColor(CrossTheme.TextHex));
             if (DrawButton("-", x + 180, y - 4, 30, 26, false, mouse, click) && volume > 0)
             {
                 volume = Math.Max(0, volume - 10);
-                audio.Apply(p);
+
             }
             DrawCenteredText($"{volume}%", x + 210, y, 40, 14, HexColor(CrossTheme.GoldHex));
             if (DrawButton("+", x + 250, y - 4, 30, 26, false, mouse, click) && volume < 100)
             {
                 volume = Math.Min(100, volume + 10);
-                audio.Apply(p);
+
             }
         }
 
@@ -516,17 +623,9 @@ namespace SoulsRevive.Cross
             bool isTavern = devActionIndex == 5;
             double hour = devLighting == 0 ? 12.0 : devLighting == 1 ? 6.0 : 22.0;
 
-            CrossPixelArt.RenderScene(canvas, 1.0, isSleep, devFrame, hour, isTavern, curAction, devFrame % 112);
-            unsafe
-            {
-                fixed (uint* ptr = canvas.Pixels)
-                {
-                    Raylib.UpdateTexture(sceneTexture, ptr);
-                }
-            }
-
-            DrawPixelFrame(dx + 12, dy + 122, 340, 184, HexColor(CrossTheme.PanelHex));
-            Raylib.DrawTexturePro(sceneTexture, new Rectangle(0, 0, 172, 92), new Rectangle(dx + 14, dy + 124, 336, 180), Vector2.Zero, 0, Color.White);
+            RenderScene(previewTexture, 1, isSleep, devFrame, hour, isTavern, curAction, devFrame % 112, KnightEquipment.From(p));
+            DrawPixelFrame(dx + 8, dy + 122, 348, 188, HexColor(CrossTheme.PanelHex));
+            Raylib.DrawTexturePro(previewTexture, new Rectangle(0, 0, 172, 92), new Rectangle(dx + 10, dy + 124, 344, 184), Vector2.Zero, 0, Color.White);
 
             int cy = dy + 320;
             // Controls: Play/Pause, Step
@@ -534,15 +633,23 @@ namespace SoulsRevive.Cross
             {
                 devPlaying = !devPlaying;
             }
-            if (DrawButton("<-", dx + 98, cy, 40, 30, false, mouse, click)) devFrame = Math.Max(0, devFrame - 1);
-            if (DrawButton("->", dx + 144, cy, 40, 30, false, mouse, click)) devFrame++;
+            if (DrawButton("<-", dx + 98, cy, 40, 30, false, mouse, click)) { devPlaying = false; devFrame = Math.Max(0, devFrame - 1); }
+            if (DrawButton("->", dx + 144, cy, 40, 30, false, mouse, click)) { devPlaying = false; devFrame = (devFrame + 1) % DevLength; }
             DrawCenteredText($"F: {devFrame}", dx + 190, cy + 6, 80, 16, HexColor(CrossTheme.TextHex));
 
             // Speed
             if (DrawButton("0.5x", dx + 266, cy, 40, 30, devSpeed == 0.5f, mouse, click)) devSpeed = 0.5f;
             if (DrawButton("1x", dx + 312, cy, 40, 30, devSpeed == 1.0f, mouse, click)) devSpeed = 1.0f;
 
-            cy += 44;
+            cy += 38;
+            if (DrawButton("RESTART", dx + 12, cy, 100, 26, false, mouse, click)) { devFrame = 0; devTimer = 0; }
+            if (DrawButton("2x", dx + 120, cy, 60, 26, devSpeed == 2, mouse, click)) devSpeed = 2;
+            cy += 38;
+            Raylib.DrawRectangle(dx + 12, cy, 340, 8, HexColor(CrossTheme.PanelHex));
+            Raylib.DrawRectangle(dx + 12, cy, (int)(340.0 * devFrame / (DevLength - 1)), 8, HexColor(CrossTheme.GoldHex));
+            if (Raylib.IsMouseButtonDown(MouseButton.Left) && Raylib.CheckCollisionPointRec(mouse, new Rectangle(dx + 12, cy - 8, 340, 24)))
+            { devPlaying = false; devFrame = (int)Math.Clamp((mouse.X - dx - 12) / 340 * (DevLength - 1), 0, DevLength - 1); }
+            cy += 32;
             // Lighting
             DrawPixelText("Lighting:", dx + 16, cy + 4, 14, HexColor(CrossTheme.TextHex));
             if (DrawButton("Day", dx + 90, cy, 70, 26, devLighting == 0, mouse, click)) devLighting = 0;
@@ -613,13 +720,15 @@ namespace SoulsRevive.Cross
             int h = total / 3600;
             int m = (total % 3600) / 60;
             int sec = total % 60;
-            return $"{h}s {m}d {sec}sn";
+            return L.Text($"{h}s {m}d {sec}sn", $"{h}h {m}m {sec}s");
         }
 
         public void Dispose()
         {
             audio?.Dispose();
             Raylib.UnloadTexture(sceneTexture);
+            Raylib.UnloadTexture(previewTexture);
+            Raylib.UnloadFont(font);
             Raylib.CloseWindow();
         }
     }

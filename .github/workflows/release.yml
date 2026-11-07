@@ -1,29 +1,32 @@
-name: Publish Multi-Platform release
+name: Publish verified release
 on:
   push:
     tags: ['v*']
 permissions:
-  contents: write
+  contents: read
 jobs:
-  release:
-    runs-on: windows-latest
+  build:
+    uses: ./.github/workflows/platforms.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/download-artifact@v4
         with:
-          dotnet-version: '9.0.x'
-      - name: Build and verify
-        shell: pwsh
-        run: |
-          ./build.ps1
-          ./verify.ps1
-          ./build-cross.ps1
-          $versionFile = Join-Path $PWD 'test-output/version.txt'
-          $app = Start-Process -FilePath './bin/SoulsRevive.exe' -ArgumentList @('--version-file', ('"' + $versionFile + '"')) -Wait -PassThru -WindowStyle Hidden
-          if ($app.ExitCode -ne 0 -or (Get-Content $versionFile -Raw).Trim() -ne $env:GITHUB_REF_NAME.TrimStart('v')) { throw 'Release tag must match AssemblyVersion in src/Experience.cs.' }
-      - name: Publish multi-platform release
-        shell: pwsh
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Check complete asset set and publish
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME ./bin/SoulsRevive.exe ./bin/SoulRevive-Setup.exe ./bin/soul-revive-linux-x64.tar.gz ./bin/soul-revive-macos-arm64.tar.gz ./bin/soul-revive-macos-x64.tar.gz ./bin/SHA256SUMS.txt --verify-tag --generate-notes --title "Soul Revive $env:GITHUB_REF_NAME"
+        run: |
+          set -euo pipefail
+          cd release
+          assets=(SoulsRevive.exe SoulRevive-Setup.exe soul-revive-linux-x64.tar.gz soul-revive-macos-arm64.tar.gz soul-revive-macos-x64.tar.gz)
+          for asset in "${assets[@]}"; do test -s "$asset"; done
+          sha256sum "${assets[@]}" > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" SHA256SUMS.txt --verify-tag --generate-notes --title "Soul Revive $GITHUB_REF_NAME"

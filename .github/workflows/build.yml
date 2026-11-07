@@ -1,45 +1,11 @@
-name: Multi-platform build and checks
+name: Build and check all platforms
 on:
   push:
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.x'
-      - name: Build Windows executable
-        shell: pwsh
-        run: ./build.ps1
-      - name: Verify app, installer and updater
-        shell: pwsh
-        run: ./verify.ps1
-      - name: Build Linux and macOS cross-platform packages
-        shell: pwsh
-        run: ./build-cross.ps1
-      - name: Upload all packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: soul-revive-packages
-          path: |
-            bin/SoulsRevive.exe
-            bin/SoulRevive-Setup.exe
-            bin/soul-revive-linux-x64.tar.gz
-            bin/soul-revive-macos-arm64.tar.gz
-            bin/soul-revive-macos-x64.tar.gz
-            bin/SHA256SUMS.txt
-      - name: Upload verification previews
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: soul-revive-verification
-          path: |
-            test-output/*.png
-            test-output/results.txt
-            test-output/failure.txt
+    uses: ./.github/workflows/platforms.yml

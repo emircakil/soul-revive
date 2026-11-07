@@ -1,11 +1,21 @@
 using System;
 using System.Drawing;
+#if PORTABLE
+using Bitmap = SoulsRevive.Cross.PixelBitmap;
+using Graphics = SoulsRevive.Cross.PixelGraphics;
+using SolidBrush = SoulsRevive.Cross.PixelBrush;
+using Pen = SoulsRevive.Cross.PixelPen;
+#else
+using System.Drawing.Drawing2D;
+#endif
+
 
 namespace SoulsRevive
 {
     static partial class PixelArt
     {
         public const int TavernArrivalFrames = 32;
+        public const int TavernCycleFrames = 128;
 
         // Original pixel sprites, using the same 172 x 92 grid as the bonfire scene.
         // No clock or theme input: the inn always has warm, firelit evening lighting.

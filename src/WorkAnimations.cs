@@ -1,5 +1,14 @@
 using System;
 using System.Drawing;
+#if PORTABLE
+using Bitmap = SoulsRevive.Cross.PixelBitmap;
+using Graphics = SoulsRevive.Cross.PixelGraphics;
+using SolidBrush = SoulsRevive.Cross.PixelBrush;
+using Pen = SoulsRevive.Cross.PixelPen;
+#else
+using System.Drawing.Drawing2D;
+#endif
+
 namespace SoulsRevive
 {
     enum WorkAction { Idle, Sharpen, Map, TendFire }

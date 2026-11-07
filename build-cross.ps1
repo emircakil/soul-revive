@@ -1,178 +1,128 @@
+[CmdletBinding()]
+param(
+    [ValidateSet('linux-x64', 'osx-arm64', 'osx-x64')]
+    [string]$Runtime,
+    [switch]$SkipTests
+)
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-$crossDir = Join-Path $projectRoot 'src-cross'
-$outputDir = Join-Path $projectRoot 'bin'
-$stagingDir = Join-Path $outputDir 'staging'
-
-New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
-New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-
-$iconPng = Join-Path $projectRoot 'assets\app-icon.png'
-
-# Resolve NuGet package folder
-$nugetDir = ((dotnet nuget locals global-packages --list) -replace '^info :\s*', '' -replace '^global-packages:\s*', '').Trim()
-
-# 1. Linux x64
-Write-Output "Building Linux x64..."
-$linuxOut = Join-Path $stagingDir 'soul-revive-linux-x64'
-New-Item -ItemType Directory -Path $linuxOut -Force | Out-Null
-dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o $linuxOut | Out-Null
-
-# Ensure libraylib.so is in $linuxOut
-$linuxSo = Join-Path $linuxOut 'libraylib.so'
-if (-not (Test-Path $linuxSo)) {
-    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.so' -Recurse | Where-Object { $_.FullName -match 'linux-x64' } | Select-Object -First 1
-    if ($src) { Copy-Item $src.FullName $linuxSo -Force }
+if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Use PowerShell 7 (pwsh).' }
+if (-not $Runtime) {
+    if ($IsLinux) { $Runtime = 'linux-x64' }
+    elseif ($IsMacOS) {
+        $Runtime = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'osx-arm64' } else { 'osx-x64' }
+    }
+    else { throw 'Specify -Runtime linux-x64, osx-arm64 or osx-x64. Release packages must be built on their target OS.' }
 }
-
-# Remove pdb
-Get-ChildItem -Path $linuxOut -Filter '*.pdb' | Remove-Item -Force
-
-$desktopEntry = @"
-[Desktop Entry]
-Name=Soul Revive
-Comment=Pixel bonfire desktop companion
-Exec=SoulsRevive
-Icon=soulrevive
-Terminal=false
-Type=Application
-Categories=Utility;Game;
-"@
-[IO.File]::WriteAllText((Join-Path $linuxOut 'soulrevive.desktop'), $desktopEntry)
-Copy-Item -LiteralPath $iconPng -Destination (Join-Path $linuxOut 'soulrevive.png')
-
-$linuxReadme = @"
-Soul Revive for Linux (x64)
-============================
-To run:
-1. Open a terminal in this folder
-2. Make the binary executable: chmod +x SoulsRevive
-3. Launch: ./SoulsRevive
-
-To install as a desktop application:
-- Copy 'soulrevive.png' to ~/.local/share/icons/
-- Copy 'soulrevive.desktop' to ~/.local/share/applications/
-- Place 'SoulsRevive' and 'libraylib.so' in ~/.local/bin/ (or update the Exec line in soulrevive.desktop)
-"@
-[IO.File]::WriteAllText((Join-Path $linuxOut 'README.txt'), $linuxReadme)
-
-$linuxTar = Join-Path $outputDir 'soul-revive-linux-x64.tar.gz'
-if (Test-Path $linuxTar) { Remove-Item -Force $linuxTar }
-tar -czf $linuxTar -C $stagingDir 'soul-revive-linux-x64'
-Write-Output "Packaged: $linuxTar"
-
-# 2. macOS arm64 (Apple Silicon)
-Write-Output "Building macOS arm64..."
-$macArmOut = Join-Path $stagingDir 'soul-revive-macos-arm64'
-$macArmApp = Join-Path $macArmOut 'SoulRevive.app'
-$macArmContents = Join-Path $macArmApp 'Contents'
-$macArmMacOS = Join-Path $macArmContents 'MacOS'
-$macArmRes = Join-Path $macArmContents 'Resources'
-New-Item -ItemType Directory -Path $macArmMacOS -Force | Out-Null
-New-Item -ItemType Directory -Path $macArmRes -Force | Out-Null
-
-dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r osx-arm64 --self-contained -p:PublishSingleFile=true -o $macArmMacOS | Out-Null
-Get-ChildItem -Path $macArmMacOS -Filter '*.pdb' | Remove-Item -Force
-
-# Ensure libraylib.dylib is present
-$macArmDylib = Join-Path $macArmMacOS 'libraylib.dylib'
-if (-not (Test-Path $macArmDylib)) {
-    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.dylib' -Recurse | Where-Object { $_.FullName -match 'osx-arm64' } | Select-Object -First 1
-    if ($src) { Copy-Item $src.FullName $macArmDylib -Force }
+$native = ($IsLinux -and $Runtime -eq 'linux-x64' -and [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'X64') -or
+    ($IsMacOS -and (($Runtime -eq 'osx-arm64' -and [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') -or
+    ($Runtime -eq 'osx-x64' -and [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'X64')))
+if (-not $native -and -not $SkipTests) { throw 'Cross-publishing requires -SkipTests. Use native CI to create verified release archives.' }
+$project = Join-Path $PSScriptRoot 'src-cross/SoulsRevive.Cross.csproj'
+$output = Join-Path $PSScriptRoot 'bin'
+$label = $Runtime.Replace('osx-', 'macos-')
+$name = "soul-revive-$label"
+# A fresh directory prevents old binaries from leaking into a package. Never delete
+# an existing staging tree (it may contain a running development build).
+$stage = Join-Path $output ('staging/' + [Guid]::NewGuid().ToString('N'))
+$package = Join-Path $stage $name
+$app = Join-Path $package 'SoulRevive.app'
+$publish = if ($Runtime.StartsWith('osx-')) { Join-Path $app 'Contents/MacOS' } else { $package }
+New-Item -ItemType Directory -Path $publish -Force | Out-Null
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+& dotnet publish $project -c Release -r $Runtime --self-contained true -p:PublishSingleFile=true -p:DebugType=None -o $publish
+if ($LASTEXITCODE -ne 0) { throw "Publish failed for $Runtime." }
+$binary = Join-Path $publish 'SoulsRevive'
+$library = Join-Path $publish $(if ($Runtime -eq 'linux-x64') { 'libraylib.so' } else { 'libraylib.dylib' })
+foreach ($required in @($binary, $library)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing required payload: $required" }
 }
-
-if (Test-Path (Join-Path $macArmMacOS 'SoulsRevive')) {
-    Copy-Item (Join-Path $macArmMacOS 'SoulsRevive') (Join-Path $macArmOut 'SoulsRevive') -Force
-}
-if (Test-Path $macArmDylib) {
-    Copy-Item $macArmDylib (Join-Path $macArmOut 'libraylib.dylib') -Force
-}
-Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macArmRes 'app-icon.png') -Force
-
-$infoPlist = @"
+$version = ([xml](Get-Content -LiteralPath $project -Raw)).Project.PropertyGroup.AssemblyVersion
+$version = ([version]$version).ToString(3)
+$expected = [regex]::Match((Get-Content (Join-Path $PSScriptRoot 'src/Experience.cs') -Raw), 'AssemblyVersion\("([\d.]+)"\)').Groups[1].Value
+if ($version -ne ([version]$expected).ToString(3)) { throw 'Windows and portable versions differ.' }
+if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag does not match assembly version.' }
+Copy-Item (Join-Path $PSScriptRoot 'assets/fonts/VT323-OFL.txt') (Join-Path $package 'FONT-LICENSE.txt')
+if ($Runtime.StartsWith('osx-')) {
+    $resources = Join-Path $app 'Contents/Resources'
+    New-Item -ItemType Directory -Path $resources -Force | Out-Null
+    $plist = @"
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>Soul Revive</string>
-    <key>CFBundleDisplayName</key>
-    <string>Soul Revive</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.soulsrevive.companion</string>
-    <key>CFBundleVersion</key>
-    <string>1.3.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleExecutable</key>
-    <string>SoulsRevive</string>
-    <key>CFBundleIconFile</key>
-    <string>app-icon.png</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-</dict>
-</plist>
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Soul Revive</string>
+<key>CFBundleDisplayName</key><string>Soul Revive</string>
+<key>CFBundleIdentifier</key><string>com.soulsrevive.companion</string>
+<key>CFBundleVersion</key><string>$version</string>
+<key>CFBundleShortVersionString</key><string>$version</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleExecutable</key><string>SoulsRevive</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>LSMinimumSystemVersion</key><string>15.0</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
 "@
-[IO.File]::WriteAllText((Join-Path $macArmContents 'Info.plist'), $infoPlist)
-
-$macReadme = @"
-Soul Revive for macOS
-=====================
-To run:
-Double-click SoulRevive.app, or run ./SoulsRevive from the terminal.
-
-Note: On macOS, if you see 'app is damaged or can't be opened' due to Gatekeeper:
-Run in Terminal:
-xattr -cr SoulRevive.app
-"@
-[IO.File]::WriteAllText((Join-Path $macArmOut 'README.txt'), $macReadme)
-
-$macArmTar = Join-Path $outputDir 'soul-revive-macos-arm64.tar.gz'
-if (Test-Path $macArmTar) { Remove-Item -Force $macArmTar }
-tar -czf $macArmTar -C $stagingDir 'soul-revive-macos-arm64'
-Write-Output "Packaged: $macArmTar"
-
-# 3. macOS x64 (Intel)
-Write-Output "Building macOS x64..."
-$macX64Out = Join-Path $stagingDir 'soul-revive-macos-x64'
-$macX64App = Join-Path $macX64Out 'SoulRevive.app'
-$macX64Contents = Join-Path $macX64App 'Contents'
-$macX64MacOS = Join-Path $macX64Contents 'MacOS'
-$macX64Res = Join-Path $macX64Contents 'Resources'
-New-Item -ItemType Directory -Path $macX64MacOS -Force | Out-Null
-New-Item -ItemType Directory -Path $macX64Res -Force | Out-Null
-
-dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r osx-x64 --self-contained -p:PublishSingleFile=true -o $macX64MacOS | Out-Null
-Get-ChildItem -Path $macX64MacOS -Filter '*.pdb' | Remove-Item -Force
-
-# Ensure libraylib.dylib is present
-$macX64Dylib = Join-Path $macX64MacOS 'libraylib.dylib'
-if (-not (Test-Path $macX64Dylib)) {
-    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.dylib' -Recurse | Where-Object { $_.FullName -match 'osx-x64' } | Select-Object -First 1
-    if ($src) { Copy-Item $src.FullName $macX64Dylib -Force }
+    [IO.File]::WriteAllText((Join-Path $app 'Contents/Info.plist'), $plist)
+    Copy-Item (Join-Path $PSScriptRoot 'assets/app-icon.png') (Join-Path $resources 'app-icon.png')
+    if ($native) {
+        $iconset = Join-Path $stage 'AppIcon.iconset'
+        New-Item -ItemType Directory -Path $iconset | Out-Null
+        foreach ($size in @(16,32,128,256,512)) {
+            foreach ($scale in @(1,2)) {
+                $pixels = $size * $scale
+                $suffix = if ($scale -eq 2) { '@2x' } else { '' }
+                & sips -z $pixels $pixels (Join-Path $resources 'app-icon.png') --out (Join-Path $iconset "icon_${size}x${size}$suffix.png") | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Icon resize failed.' }
+            }
+        }
+        & iconutil -c icns $iconset -o (Join-Path $resources 'AppIcon.icns')
+        if ($LASTEXITCODE -ne 0) { throw 'macOS icon conversion failed.' }
+        & plutil -lint (Join-Path $app 'Contents/Info.plist')
+        if ($LASTEXITCODE -ne 0) { throw 'Invalid Info.plist.' }
+        & chmod +x $binary
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot set executable permissions.' }
+        # Ad-hoc signatures are needed for local Apple Silicon execution. They are
+        # not Developer ID signatures and do not imply Apple notarization.
+        Get-ChildItem -LiteralPath $publish -Filter '*.dylib' | ForEach-Object {
+            & codesign --force --sign - $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed: $($_.Name)" }
+        }
+        & codesign --force --deep --sign - $app
+        if ($LASTEXITCODE -ne 0) { throw 'App bundle signing failed.' }
+        & codesign --verify --deep --strict $app
+        if ($LASTEXITCODE -ne 0) { throw 'App signature verification failed.' }
+    }
+    [IO.File]::WriteAllText((Join-Path $package 'README.txt'), "Move SoulRevive.app to Applications and open it. This build is ad-hoc signed, not notarized. If macOS blocks it, use System Settings > Privacy & Security > Open Anyway after verifying the download source. To run in Terminal: SoulRevive.app/Contents/MacOS/SoulsRevive")
 }
-
-if (Test-Path (Join-Path $macX64MacOS 'SoulsRevive')) {
-    Copy-Item (Join-Path $macX64MacOS 'SoulsRevive') (Join-Path $macX64Out 'SoulsRevive') -Force
+else {
+    Copy-Item (Join-Path $PSScriptRoot 'assets/app-icon.png') (Join-Path $package 'soulrevive.png')
+    Copy-Item (Join-Path $PSScriptRoot 'packaging/linux/install.sh') (Join-Path $package 'install.sh')
+    [IO.File]::WriteAllText((Join-Path $package 'README.txt'), "Run ./SoulsRevive, or ./install.sh for a per-user desktop launcher. Keep the entire extracted directory together. Requires a glibc x64 desktop with OpenGL 3.3, X11/XWayland, and audio libraries. See the repository README for distribution packages.")
+    if ($native) {
+        & chmod +x $binary (Join-Path $package 'install.sh')
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot set executable permissions.' }
+        $dependencies = & ldd $library 2>&1
+        if ($LASTEXITCODE -ne 0 -or ($dependencies -match 'not found')) { throw "Missing native dependencies: $dependencies" }
+    }
 }
-if (Test-Path $macX64Dylib) {
-    Copy-Item $macX64Dylib (Join-Path $macX64Out 'libraylib.dylib') -Force
+if (-not $native -or $SkipTests) {
+    Write-Warning "Unverified publish only: $publish. No release archive created; native icon/signing/permissions and smoke tests are required."
+    return
 }
-Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macX64Res 'app-icon.png') -Force
-[IO.File]::WriteAllText((Join-Path $macX64Contents 'Info.plist'), $infoPlist)
-[IO.File]::WriteAllText((Join-Path $macX64Out 'README.txt'), $macReadme)
-
-$macX64Tar = Join-Path $outputDir 'soul-revive-macos-x64.tar.gz'
-if (Test-Path $macX64Tar) { Remove-Item -Force $macX64Tar }
-tar -czf $macX64Tar -C $stagingDir 'soul-revive-macos-x64'
-Write-Output "Packaged: $macX64Tar"
-
-# Clean up staging
-Remove-Item -Recurse -Force $stagingDir
-
-# Update SHA256SUMS.txt
-$releaseFiles = @(Get-ChildItem -LiteralPath $outputDir -File | Where-Object { $_.Name -ne 'SHA256SUMS.txt' -and $_.Extension -in @('.exe', '.gz', '.zip') } | ForEach-Object FullName)
-$hashes = foreach ($file in $releaseFiles) { (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file) }
-[IO.File]::WriteAllLines((Join-Path $outputDir 'SHA256SUMS.txt'), $hashes, [Text.UTF8Encoding]::new($false))
-Write-Output "Generated SHA256SUMS.txt for all release packages."
+if (-not $SkipTests) {
+    & (Join-Path $PSScriptRoot 'verify-cross.ps1') -Executable $binary -OutputDirectory (Join-Path $PSScriptRoot "test-output/$label")
+}
+$archive = Join-Path $output "$name.tar.gz"
+& tar -czf $archive -C $stage $name
+if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed.' }
+# Test the extracted payload, not only the publish directory.
+$extracted = Join-Path $stage 'extracted'
+New-Item -ItemType Directory -Path $extracted | Out-Null
+& tar -xzf $archive -C $extracted
+if ($LASTEXITCODE -ne 0) { throw 'Archive extraction failed.' }
+$relativeBinary = if ($Runtime.StartsWith('osx-')) { 'SoulRevive.app/Contents/MacOS/SoulsRevive' } else { 'SoulsRevive' }
+if (-not $SkipTests) {
+    & (Join-Path $PSScriptRoot 'verify-cross.ps1') -Executable (Join-Path (Join-Path $extracted $name) $relativeBinary) -OutputDirectory (Join-Path $PSScriptRoot "test-output/$label-archive")
+}
+$hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+[IO.File]::WriteAllText("$archive.sha256", "$hash  $name.tar.gz`n")
+Write-Output "Verified package: $archive"

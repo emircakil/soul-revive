@@ -12,6 +12,7 @@ namespace SoulsRevive.Cross
         bool isPlaying;
         int lastFire = -1, lastAmbience = -1, lastMusic = -1;
         bool lastEnabled;
+        Sound? reminder;
 
         public CrossAudio()
         {
@@ -30,6 +31,7 @@ namespace SoulsRevive.Cross
 
         public void Apply(Preferences p)
         {
+            if (!Raylib.IsAudioDeviceReady()) return;
             lock (gate)
             {
                 if (!p.AudioEnabled || (p.FireVolume + p.AmbienceVolume + p.MusicVolume == 0))
@@ -108,9 +110,22 @@ namespace SoulsRevive.Cross
 
         public void Mute() => Stop();
 
+        public void Remind()
+        {
+            if (!Raylib.IsAudioDeviceReady()) return;
+            if (!reminder.HasValue)
+            {
+                Wave wave = Raylib.LoadWaveFromMemory(".wav", Soundscape.Render(0, 0, 80, 1));
+                reminder = Raylib.LoadSoundFromWave(wave);
+                Raylib.UnloadWave(wave);
+            }
+            Raylib.PlaySound(reminder.Value);
+        }
+
         public void Dispose()
         {
             Stop();
+            if (reminder.HasValue) Raylib.UnloadSound(reminder.Value);
             try
             {
                 if (Raylib.IsAudioDeviceReady())

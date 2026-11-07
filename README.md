@@ -26,23 +26,52 @@ Releases are available for Windows, macOS, and Linux on [Releases](https://githu
 Download **SoulRevive-Setup.exe**, open it, and select **Kur ve başlat / Install and launch**. No Git, PowerShell commands, development tools, or administrator privileges are needed by users. Setup offers desktop and Windows startup shortcuts and adds the app to Windows Installed Apps. Setup installs to `%LOCALAPPDATA%\SoulsRevive`. For portable use, run **SoulsRevive.exe** directly.
 
 ### Linux (x64)
-Download **soul-revive-linux-x64.tar.gz**, extract it, and run:
+Download **soul-revive-linux-x64.tar.gz**, extract it, and run the executable inside the extracted folder:
+
 ```bash
-chmod +x SoulsRevive
+tar -xzf soul-revive-linux-x64.tar.gz
+cd soul-revive-linux-x64
 ./SoulsRevive
+# Optional: install for this user and add an application-menu entry.
+./install.sh
 ```
-Includes a `soulrevive.desktop` launcher and icon for easy desktop integration. Settings and statistics are stored in `~/.local/share/SoulsRevive`.
+
+Keep the entire directory together: the self-contained .NET runtime and native libraries ship alongside the executable. No .NET installation is required. The installer copies the full payload to `$XDG_DATA_HOME/soul-revive/app` (default `~/.local/share/soul-revive/app`) and creates a launcher with an absolute path, including support for spaces in the home directory.
+
+The Linux build targets a **glibc 2.38+ x64 desktop**, with OpenGL 3.3 and X11 (or XWayland on a Wayland desktop). Ubuntu 24.04 is the CI baseline; the packaged Raylib library requires newer glibc than Ubuntu 22.04 provides. Alpine/musl, Linux ARM, and native Wayland are not release targets. On Ubuntu 24.04, the graphical/audio libraries can be installed with:
+
+```bash
+sudo apt-get install libgl1 libx11-6 libxcursor1 libxrandr2 libxi6 libxinerama1 libasound2t64 libpulse0
+```
+
+Settings and statistics live in `$XDG_DATA_HOME/SoulsRevive`, defaulting to `~/.local/share/SoulsRevive`. Installing or replacing the application does not replace that profile.
 
 ### macOS (Apple Silicon & Intel)
-- **Apple Silicon (M1/M2/M3/M4):** download **soul-revive-macos-arm64.tar.gz**
-- **Intel Mac:** download **soul-revive-macos-x64.tar.gz**
+Requires **macOS 15 or later**.
 
-Extract the archive and double-click **SoulRevive.app** (or run `./SoulsRevive` from Terminal).
-If Gatekeeper prompts on first open, run:
-```bash
-xattr -cr SoulRevive.app
-```
+- **Apple Silicon:** download **soul-revive-macos-arm64.tar.gz**.
+- **Intel:** download **soul-revive-macos-x64.tar.gz**.
+
+Extract the archive, move **SoulRevive.app** to Applications, and open it. The bundle includes the runtime, native libraries, a Retina icon, and an ad-hoc signature. It is **not Developer ID signed or notarized**. If macOS blocks the downloaded app, verify its source/checksum and use **System Settings > Privacy & Security > Open Anyway**. Terminal launch uses `SoulRevive.app/Contents/MacOS/SoulsRevive`; there is no second standalone executable outside the bundle.
+
 Settings and statistics are saved to `~/Library/Application Support/SoulsRevive`.
+
+### Platform behavior
+The timer, statistics, equipment and original knight/tavern animations share the same source on all platforms. The portable desktop shell uses Raylib, with a managed pixel rasterizer instead of Windows GDI+.
+
+| Behavior | Windows | macOS / Linux |
+| --- | --- | --- |
+| Work/break/chill, statistics, themes, Turkish/English, equipment | Yes | Yes |
+| Offline soundscape and reminder audio | Yes | Yes; gracefully disabled without an audio device |
+| Developer animation panel | Separate 4x preview window | Embedded preview, frame stepping, timeline and 0.5x/1x/2x playback |
+| Settings | Save/Cancel | Save/Cancel; Escape cancels |
+| Minimize / close | Hide to tray | Minimize to Dock/taskbar / save and quit |
+| Move window | Drag app | Drag native title bar |
+| Always on top | Yes | Requested from window manager; compositor rules may override |
+| Automatic pause | Screen lock, suspend, long timer gaps | Suspend/clock jumps or gaps over 5 seconds; pause manually before locking the screen |
+| Startup integration / in-app binary updater | Yes | Use OS login items / replace the downloaded application |
+
+The Windows-specific tray, startup and updater instructions below apply to Windows. On macOS/Linux, quitting stops the timer; minimizing keeps it running. Audio playback changes apply on Save.
 
 ## Your bonfire
 
@@ -50,14 +79,14 @@ Settings and statistics are saved to `~/Library/Application Support/SoulsRevive`
 - During active work, the knight randomly sharpens his sword, holds a map still and scans it with his head, or walks toward the bonfire to toss a log. The shield is quickly stowed before handling props; tiny sparks scatter at the sharpening contact point, sharpening stops before the sword rises, and tossed logs follow an independent arc. Each routine lasts 14 seconds, with 10–20 seconds of quiet idle between routines. Pausing freezes the routine; break and mode changes reset it. Sword grips and props share the hands’ pose coordinates.
 - **Mola ver / Take a break:** your knight lies down beside the fire and sleeps, with breathing and floating Z animations. Stand up, walk, or stretch while the timer runs. Completing a break restores health and starts a new dawn. Returning early starts a fresh work round without awarding a completed break.
 - **Çalışmıyorum / Chill mode:** your knight enters a cozy pixel tavern and sits down with Solaire of Astora. They clink tankards, take turns sipping, and relax by the hearth. The tavern keeps its warm evening lighting regardless of the computer's time; a **Şerefe! / Cheers!** greeting replaces the clock. The work timer and work statistics stop. Returning to Working starts a new round at dawn.
-- **Duraklat / Pause:** freezes the timer and work statistics. Screen lock, sleep, or a long timer gap also pauses work. Resume manually when you return.
-- Drag the window to move it. The title-bar **gear button** opens Settings. **_ / X** hide it to the tray; the timer continues. Double-click the tray bonfire to reveal it, or right-click and choose **Çıkış / Quit** to exit.
+- **Duraklat / Pause:** freezes the timer and work statistics. Sleep or a timer gap over five seconds also pauses work; Windows additionally pauses on screen lock. Resume manually when you return.
+- Open Settings with the title-bar gear button. On Windows, **_ / X** hide the app to the tray; the timer continues. Double-click the tray bonfire to reveal it, or right-click and choose **Çıkış / Quit** to exit. On macOS/Linux, minimize keeps running and close saves and quits.
 
 ## Settings and statistics
 
 **Genel / General:** choose Türkçe or English, Dark mode or Lit mode, timer durations, always-on-top, reminder sounds, and Windows startup. The pixel font is embedded, including Turkish characters; no font installation is needed. Changing durations starts a new round. Other settings preserve your timer.
 
-**Sesler / Sounds:** enable **Müzik ve ortam seslerini çal / Play music and ambience**, set independent **Fire**, **Ambience**, and **Music** volumes from 0–100%, then select Save for continuous background playback. Fire crackle, wind, and the bonfire melody mix together. Preview and stop audio before saving. Preview and reminder sounds use independent playback, and saved audio preferences apply again at launch. All layers are synthesized locally and work offline. Reminder sounds have their own checkbox. Soundscape playback starts disabled until enabled here.
+**Sesler / Sounds:** enable **Müzik ve ortam seslerini çal / Play music and ambience**, set independent **Fire**, **Ambience**, and **Music** volumes from 0–100%, then select Save for continuous background playback. Fire crackle, wind, and the bonfire melody mix together. Windows additionally offers separate preview/stop playback before saving. Reminder sounds use independent playback, and saved audio preferences apply again at launch. All layers are synthesized locally and work offline. Reminder sounds have their own checkbox. Soundscape playback starts disabled until enabled here.
 
 **İstatistikler / Statistics:** shows lifetime work hours, today's work hours, completed work rounds, and today's completed breaks and movement minutes. The main window displays today's and lifetime work in hours, minutes and seconds; the statistics dialog refreshes while open. Today's total rolls over at midnight, and lifetime hours keep accumulating across restarts and updates. Only active timer seconds count as work; pauses, breaks, chill, time after expiry, and time while the app is closed are excluded. Lifetime tracking starts with version 1.1; older versions did not record work hours.
 
@@ -81,34 +110,54 @@ The release must contain an asset named **SoulsRevive.exe** with a GitHub-provid
 
 ## Build and verify
 
-Develop on Windows with .NET Framework 4.8 or later and .NET 9 SDK.
+The Windows native app uses .NET Framework 4.8 and its existing compiler:
 
 ```powershell
-.\build.ps1
-.\verify.ps1
-.\build-cross.ps1
+./build.ps1
+./verify.ps1
 ```
 
-The Windows native build generates a multi-resolution pixel bonfire icon, embeds the VT323 font, and produces:
+The portable app uses **.NET 10 SDK**, PowerShell 7 and Raylib-cs 8.1.0. The SDK is selected by `global.json`. End users do not need the SDK or runtime. Build release packages on the matching OS and architecture:
 
-- `bin\SoulsRevive.exe` — Windows portable application
-- `bin\SoulRevive-Setup.exe` — Windows standalone graphical installer
-- `bin\soul-revive-linux-x64.tar.gz` — Linux x64 package with desktop launcher
-- `bin\soul-revive-macos-arm64.tar.gz` — macOS Apple Silicon (M1/M2/M3/M4) `.app` bundle & binary
-- `bin\soul-revive-macos-x64.tar.gz` — macOS Intel `.app` bundle & binary
-- `bin\SHA256SUMS.txt` — checksums for all packages
+```powershell
+# Linux x64
+pwsh ./build-cross.ps1 -Runtime linux-x64
+# Apple Silicon Mac
+pwsh ./build-cross.ps1 -Runtime osx-arm64
+# Intel Mac
+pwsh ./build-cross.ps1 -Runtime osx-x64
+```
 
-`verify.ps1` checks timer transitions, work statistics, midnight rollover, legacy settings migration, backup recovery, localization, sound layers, release validation, and tamper rejection. It also checks the tavern arrival, toast and sipping poses, Solaire's sun crest, and scene independence from local time. It renders all major views in both themes and languages to `test-output`. It also verifies installer extraction and upgrades in an isolated folder and runs the real update helper against disposable fixture executables to test its readiness handshake, replacement, rollback copy, and restart. Your installed app, registry, and real statistics are untouched by these checks.
+On headless Linux, install `xvfb` and `xauth` as well as the graphical libraries listed above. The verification script automatically uses Xvfb when DISPLAY is unset.
 
-To launch setup from a source checkout, run `./install.ps1`. For an isolated UI development profile, run `bin\SoulsRevive.exe --profile "C:\full\path\profile"`.
+Each native build verifies its payload, runs regression checks and a real window/font/render test, creates the archive with executable permissions, extracts it and tests the extracted application again. macOS additionally validates the plist and bundle signature. A missing native library or failed command aborts the build; libraries are resolved from the pinned NuGet dependency, never from an arbitrary cache search.
+
+For development without packaging:
+
+```powershell
+dotnet run --project src-cross/SoulsRevive.Cross.csproj -- --profile /absolute/path/to/dev-profile
+dotnet run --project src-cross/SoulsRevive.Cross.csproj -- --self-test /absolute/path/to/test-output
+```
+
+Windows developers can cross-publish with `./build-cross.ps1 -Runtime linux-x64 -SkipTests` (or either macOS RID). This creates an **unverified staging directory only**, not a release archive. Native signing, permissions and UI execution still require the target system.
+
+Outputs:
+
+- `bin/SoulsRevive.exe` and `bin/SoulRevive-Setup.exe` — Windows application/installer.
+- `bin/soul-revive-linux-x64.tar.gz` — Linux payload and per-user installer.
+- `bin/soul-revive-macos-arm64.tar.gz`, `bin/soul-revive-macos-x64.tar.gz` — macOS app bundles.
+- Each portable archive has a `.sha256` file. The release job creates one combined `SHA256SUMS.txt`.
+
+`verify.ps1` covers Windows timers, statistics, migration, recovery, localization, sound layers, artwork, installer and updater rollback. `verify-cross.ps1` covers the shared core, fractional break accounting, expired-session reload, midnight rollover, atomic profile recovery, single-instance locking, every animation frame, equipment, sound synthesis, Turkish glyphs and settings transactions. It exports 32 UI previews across both languages/themes. Test profiles are isolated from real statistics.
 
 ## Publish a release
 
-1. Update `AssemblyVersion` and `AssemblyFileVersion` in `src/Experience.cs`.
-2. Run build and verification, commit changes, then push a matching tag such as `v1.3.0`.
-3. `.github/workflows/release.yml` builds, verifies, checks the tag against the embedded version, and publishes Windows, macOS, and Linux packages with checksums to GitHub Releases. Future users can update entirely inside the app.
+1. Keep the versions in `src/Experience.cs` and `src-cross/SoulsRevive.Cross.csproj` identical.
+2. Build and verify, commit, then push a matching tag such as `v1.3.0`.
+3. The reusable `.github/workflows/platforms.yml` builds on Windows, Ubuntu x64, macOS ARM64 and macOS Intel. Both regular CI and releases use this same verification pipeline.
+4. The release job waits for **all** platforms, checks the complete asset set, generates combined checksums and only then publishes to GitHub Releases.
 
-Regular CI also builds and verifies all packages and uploads UI previews. Release publishing is a maintainer action; building locally does not publish anything.
+Building locally does not publish anything. Apple Developer ID signing/notarization is not configured.
 
 ## Artwork and font
 

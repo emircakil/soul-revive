@@ -1,7 +1,18 @@
 using System;
 using System.Drawing;
+#if PORTABLE
+using Bitmap = SoulsRevive.Cross.PixelBitmap;
+using Graphics = SoulsRevive.Cross.PixelGraphics;
+using SolidBrush = SoulsRevive.Cross.PixelBrush;
+using Pen = SoulsRevive.Cross.PixelPen;
+#else
 using System.Drawing.Drawing2D;
+#endif
+
+
+#if !PORTABLE
 using System.Windows.Forms;
+#endif
 
 namespace SoulsRevive
 {
@@ -64,6 +75,7 @@ namespace SoulsRevive
             }
         }
     }
+#if !PORTABLE
     sealed class EquipmentPreview : Control
     {
         public Func<KnightEquipment> Selection;
@@ -75,4 +87,5 @@ namespace SoulsRevive
             using(var scene=PixelArt.EquipmentScene(Selection(),1,false,0,12,false,WorkAction.Idle,0))e.Graphics.DrawImage(scene,ClientRectangle);
         }
     }
+#endif
 }
