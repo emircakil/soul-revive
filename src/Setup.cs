@@ -88,7 +88,7 @@ namespace SoulsRevive
     {
         public SetupDialog()
         {
-            Text="Soul Revive · Setup";ClientSize=new Size(500,448);BackColor=Theme.Background;ForeColor=Theme.Text;Font=PixelFont.Create(18);
+            Text="Soul Revive · Setup";ClientSize=new Size(500,448);BackColor=Theme.Background;ForeColor=Theme.Text;Font=PixelFont.Create(22);
             FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;StartPosition=FormStartPosition.CenterScreen;Icon=PixelArt.MakeIcon();
             Controls.Add(new PixelLabel("SOUL / REVIVE",new Rectangle(24,22,452,46),Theme.Gold,23));
             var language=new PixelCombo{Bounds=new Rectangle(300,78,176,36)};language.Items.AddRange(new[]{"Türkçe","English"});language.SelectedIndex=0;Controls.Add(language);

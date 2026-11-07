@@ -95,6 +95,8 @@ namespace SoulsRevive
         {R(g,"#281F1C",x,54,5,29);R(g,"#8F5F38",x+1,55,3,26);R(g,"#AD7D46",x,55,5,2);R(g,"#69422A",x,72,17,4);R(g,"#B3844E",x,72,17,1);R(g,"#3A291F",x+12,76,3,7);}
 
         static void DrawTavernKnight(Graphics g,int x,int frame,bool solaire,bool walking)
+        {using(new ArmorInk(!solaire))DrawTavernKnightCore(g,x,frame,solaire,walking);}
+        static void DrawTavernKnightCore(Graphics g,int x,int frame,bool solaire,bool walking)
         {
             int breath=walking?-(int)Math.Round(Math.Abs(Math.Sin(frame*Math.PI/4))):((frame/12+(solaire?1:0))%2);
             var saved=g.Save();g.TranslateTransform(x,breath);
@@ -241,10 +243,13 @@ namespace SoulsRevive
             {
                 SipPose pose = DrinkingPose(frame, solaire);
                 Point grip = new Point(pose.Cup.X + (solaire ? 8 : -2), pose.Cup.Y + 5);
-                DrawDrinkingArm(g, pose.Shoulder, pose.Elbow, grip, solaire);
+                using(new ArmorInk(!solaire))DrawDrinkingArm(g, pose.Shoulder, pose.Elbow, grip, solaire);
                 DrawTankard(g, pose.Cup.X, pose.Cup.Y, solaire, pose.Angle, pose.WidthScale);
-                R(g,solaire ? "#869184" : "#778F99",grip.X-1,grip.Y,3,3);
-                R(g,"#C2CFC7",grip.X-1,grip.Y,2,1);
+                using(new ArmorInk(!solaire))
+                {
+                    R(g,solaire ? "#869184" : "#778F99",grip.X-1,grip.Y,3,3);
+                    R(g,"#C2CFC7",grip.X-1,grip.Y,2,1);
+                }
             }
             if(cycle>=36&&cycle<39)
             {

@@ -4,7 +4,7 @@ $outputDir = Join-Path $projectRoot 'bin'
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.cs' | ForEach-Object FullName)
-$common = @('/nologo', '/target:winexe', '/optimize+', '/utf8output', '/codepage:65001', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', '/reference:System.Runtime.Serialization.dll', "/resource:$projectRoot\assets\fonts\PixelifySans-Regular.ttf,PixelFont.ttf", "/resource:$projectRoot\assets\fonts\PixelifySans-OFL.txt,PixelFont.License")
+$common = @('/nologo', '/target:winexe', '/optimize+', '/utf8output', '/codepage:65001', '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll', '/reference:System.Runtime.Serialization.dll', "/resource:$projectRoot\assets\fonts\VT323-Regular.ttf,PixelFont.ttf", "/resource:$projectRoot\assets\fonts\VT323-OFL.txt,PixelFont.License")
 # Generate the multi-resolution bonfire icon from the same artwork used by the tray.
 $artworkExe = Join-Path $outputDir 'SoulRevive.Artwork.exe'
 & $compiler @common /main:SoulsRevive.Program /out:$artworkExe @sources

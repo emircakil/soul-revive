@@ -35,6 +35,9 @@ namespace SoulsRevive
         [DataMember] public bool Paused;
         [DataMember] public bool Chill;
         [DataMember] public bool LightMode;
+        [DataMember] public int ArmorStyle;
+        [DataMember] public int SwordStyle;
+        [DataMember] public int ShieldStyle;
         [DataMember] public int FireVolume = 35;
         [DataMember] public int AmbienceVolume = 25;
         [DataMember] public int MusicVolume = 20;
@@ -49,6 +52,7 @@ namespace SoulsRevive
 
         public void Validate()
         {
+            ArmorStyle=Math.Max(0,Math.Min(2,ArmorStyle));SwordStyle=Math.Max(0,Math.Min(2,SwordStyle));ShieldStyle=Math.Max(0,Math.Min(2,ShieldStyle));
             WorkMinutes = Math.Max(1, Math.Min(180, WorkMinutes));
             BreakMinutes = Math.Max(1, Math.Min(30, BreakMinutes));
             if (Chill) { InBreak = false; Paused = false; }
@@ -273,7 +277,7 @@ namespace SoulsRevive
             using (var format = new StringFormat())
             {
                 g.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
-                format.Alignment = align == ContentAlignment.MiddleCenter ? StringAlignment.Center : StringAlignment.Near;
+                format.Alignment = align == ContentAlignment.MiddleCenter ? StringAlignment.Center : align == ContentAlignment.MiddleRight ? StringAlignment.Far : StringAlignment.Near;
                 format.LineAlignment = StringAlignment.Center; format.Trimming = StringTrimming.EllipsisCharacter;
                 format.FormatFlags = StringFormatFlags.NoWrap;
                 g.DrawString(s,f,brush,rect,format);
@@ -284,6 +288,7 @@ namespace SoulsRevive
     public sealed class EmberButton : Button
     {
         public bool Primary;
+        public bool GearIcon;
         bool hover;
         public EmberButton(string text, Rectangle bounds, bool primary)
         {
@@ -297,12 +302,33 @@ namespace SoulsRevive
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
-            Color bg = Primary ? Theme.Gold : Theme.Panel;
+            Color bg = Primary ? ColorTranslator.FromHtml(Theme.Light ? "#81501F" : "#55432B") : Theme.Panel;
             if(!Enabled)bg=Theme.Panel;
             if(hover && Enabled) bg=DayCycle.Blend(bg,Theme.Text,.12);
             Theme.Frame(g,ClientRectangle,bg);
             using(var pen=new Pen(DayCycle.Blend(bg,Theme.Text,.25),2)) g.DrawLine(pen,5,4,Width-6,4);
-            Theme.Label(g, Text, 10, !Enabled ? Theme.Muted : Primary ? Theme.Background : Theme.Text, ClientRectangle, ContentAlignment.MiddleCenter, "pixel");
+            if (GearIcon)
+            {
+                // Integer-pixel gear: independent of font glyph coverage and scaling.
+                string[] pixels = {
+                    "00000111100000", "00000111100000",
+                    "00111111111100", "00111111111100",
+                    "00111000011100", "11110000001111",
+                    "11110000001111", "11110000001111",
+                    "11110000001111", "00111000011100",
+                    "00111111111100", "00111111111100",
+                    "00000111100000", "00000111100000"
+                };
+                using(var ink=new SolidBrush(Enabled ? Theme.Gold : Theme.Muted))
+                    for(int y=0;y<pixels.Length;y++)
+                        for(int x=0;x<pixels[y].Length;x++)
+                            if(pixels[y][x]=='1')g.FillRectangle(ink,(Width-14)/2+x,(Height-14)/2+y,1,1);
+            }
+            else
+            {
+                int inset = Width < 44 ? 2 : 8;
+                Theme.Label(g, Text, 11, !Enabled ? Theme.Muted : Primary ? ColorTranslator.FromHtml("#FFF1D6") : Theme.Text, new Rectangle(inset,2,Width-inset*2,Height-4), ContentAlignment.MiddleCenter, "pixel");
+            }
             if (Focused) ControlPaint.DrawFocusRectangle(g, new Rectangle(4, 4, Width - 8, Height - 8));
         }
     }
@@ -311,16 +337,18 @@ namespace SoulsRevive
     static partial class PixelArt
     {
         static void R(Graphics g, string hex, int x, int y, int w, int h)
-        { using (var b = new SolidBrush(ColorTranslator.FromHtml(hex))) g.FillRectangle(b, x, y, w, h); }
+        { using (var b = new SolidBrush(EquipmentColor(hex))) g.FillRectangle(b, x, y, w, h); }
         static void Poly(Graphics g, string hex, params int[] points)
         {
             Point[] p = new Point[points.Length / 2];
             for (int i = 0; i < p.Length; i++) p[i] = new Point(points[i * 2], points[i * 2 + 1]);
-            using (var b = new SolidBrush(ColorTranslator.FromHtml(hex))) g.FillPolygon(b, p);
+            using (var b = new SolidBrush(EquipmentColor(hex))) g.FillPolygon(b, p);
         }
         public static Bitmap Scene(double health, bool rest, int frame)
         { return Scene(health, rest, frame, 22, false); }
         public static Bitmap Scene(double health, bool rest, int frame, double hour, bool chill)
+        { return Scene(health,rest,frame,hour,chill,WorkAction.Idle,0); }
+        public static Bitmap Scene(double health, bool rest, int frame, double hour, bool chill, WorkAction action, int actionFrame)
         {
             if (chill) return Tavern(frame);
             var bitmap = new Bitmap(172, 92);
@@ -371,57 +399,9 @@ namespace SoulsRevive
                     int drift = (int)Math.Round(rise * .15 + 2 * Math.Sin(beat + i));
                     R(g, rise < 17 ? "#DF9250" : "#8F4D31",120+(i*11)%16+drift,67-rise,1,1);
                 }
-                if(rest) DrawRestingKnight(g,frame,true);
+                if(rest) {using(new ArmorInk(true))DrawRestingKnight(g,frame,true);}
                 else {
-                int bob = (int)Math.Round(Math.Sin(beat / 2 + (frame / 16 % 2) * Math.PI));
-                int slump = health <= 0 && !rest ? 7 : 0;
-                int ox = 65, oy = 26 + bob + slump;
-                var saved = g.Save(); g.TranslateTransform(ox, oy);
-                // Tattered rust-red cloak, steel plate, chainmail and great helm.
-                int wind = (int)Math.Round(3 * Math.Sin(beat));
-                Poly(g,"#292029",-10,19,-18,30,-21+wind,49,-15+wind,46,-12+wind,50,-9,46,-5,49,1,31);
-                Poly(g,"#713B39",-9,20,-15,29,-17+wind,44,-13+wind,42,-11+wind,46,-9,41,-5,44,0,25);
-                R(g,"#9F5546",-11,25,3,13);
-                if (slump == 0)
-                {
-                    R(g,"#22272E",-7,35,8,18); R(g,"#22272E",4,35,8,18);
-                    R(g,"#58626E",-6,36,6,13); R(g,"#7F8B97",-6,37,2,10);
-                    R(g,"#485360",5,36,6,13); R(g,"#707D89",5,37,2,10);
-                    R(g,"#A1ABB2",-7,39,7,3); R(g,"#8A97A0",4,39,8,3);
-                    R(g,"#2E3540",-10,49,11,5); R(g,"#7F8A93",-9,49,9,2);
-                    R(g,"#2E3540",4,49,12,5); R(g,"#7F8A93",5,49,9,2);
-                }
-                else
-                {
-                    R(g,"#46505E",-6,34,17,7); R(g,"#7B8791",-5,34,14,2);
-                    R(g,"#3A424E",5,39,13,7); R(g,"#818B95",6,39,11,2);
-                    R(g,"#2E3540",-9,40,8,7); R(g,"#7F8A93",-8,40,6,2);
-                }
-                Poly(g,"#242A32",-9,17,9,17,14,25,10,35,-8,35,-13,25);
-                Poly(g,"#717F8C",-7,18,7,18,11,26,7,31,-6,31,-9,25);
-                Poly(g,"#A8B4BC",-7,18,1,18,-2,29,-6,28,-8,24);
-                R(g,"#D0D3CD",-7,19,11,2); R(g,"#455361",1,23,8,3);
-                R(g,"#8C754F",-8,31,17,3); R(g,"#C5AD77",-1,31,3,3);
-                R(g,"#424A55",-12,21,6,13); R(g,"#96A3AC",-13,20,7,5);
-                R(g,"#D1D6D0",-12,20,5,2);
-                R(g,"#424A55",9,21,6,14); R(g,"#96A3AC",8,20,8,5); R(g,"#D1D6D0",9,20,5,2);
-                // Kite shield, with an amber cross.
-                Poly(g,"#252A32",-19,28,-7,26,-5,41,-11,48,-19,41);
-                Poly(g,"#6E747A",-18,29,-8,28,-7,40,-11,45,-17,40);
-                Poly(g,"#354650",-16,30,-9,29,-9,39,-12,43,-15,39);
-                R(g,"#B9A16D",-13,31,2,10); R(g,"#B9A16D",-16,34,7,2);
-                // Long sword held by the right hand.
-                R(g,"#DFDCD0",18,16,2,24); R(g,"#8B9DA7",20,17,1,23); R(g,"#E4E1CF",19,13,1,4);
-                R(g,"#AD8C58",14,40,10,2); R(g,"#605449",18,42,2,7); R(g,"#89949B",14,34,5,5);
-                // Tall enclosed helm and narrow glowing visor.
-                if (!rest && health < .25) g.TranslateTransform(1, 2 + Math.Max(bob, 0));
-                R(g,"#242A33",-6,1,14,18); R(g,"#7F8B95",-7,4,16,13);
-                R(g,"#B3BEC2",-5,1,11,3); R(g,"#D1D8D2",-5,4,3,9);
-                R(g,"#A9B5BB",-2,4,8,4); R(g,"#566470",6,5,3,12);
-                R(g,"#272E37",-6,9,13,3); R(g, health < .25 && !rest ? "#E48F63" : "#D4BB85",-4,10,8,1);
-                R(g,"#C0C8C8",-1,6,2,11); R(g,"#56616A",-5,14,3,1); R(g,"#56616A",3,14,2,1);
-                R(g,"#87949B",-5,17,11,2); R(g,"#393F48",-3,19,7,2);
-                g.Restore(saved);
+                using(new ArmorInk(true))DrawWorkingKnight(g,health,frame,action,actionFrame);
                 }
                 // Foreground tufts and stones anchor the scene.
                 R(g,"#4A4740",45,82,7,3); R(g,"#636055",46,81,4,1);
@@ -441,8 +421,8 @@ namespace SoulsRevive
             R(g,"#28323C",73,61+breath,14,14); R(g,"#98A7AF",74,61+breath,12,12);
             R(g,"#D0D7CE",75,62+breath,3,8); R(g,"#394753",75,66+breath,10,2);
             R(g,"#C5B184",78,67+breath,4,1); R(g,"#667782",81,61+breath,4,11);
-            Poly(g,"#26323A",66,67,76,66,78,77,72,81,66,77); R(g,"#8A967F",68,69,6,2); R(g,"#B49A64",71,69,1,8);
-            R(g,"#B2BEC0",62,67,1,11); R(g,"#A78C5C",59,66,7,1);
+            var shieldPose=g.Save();g.TranslateTransform(85,39);DrawEquippedShield(g);g.Restore(shieldPose);
+            var swordPose=g.Save();g.TranslateTransform(62,66);g.ScaleTransform(.45f,.45f);HeldSword(g,0,0,180);g.Restore(swordPose);
             if(asleep)
             {
                 int rise=(frame/4)%16; int x=83+rise/4,y=57-rise;

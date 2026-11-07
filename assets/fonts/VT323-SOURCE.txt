@@ -1,0 +1,3 @@
+VT323 by Peter Hull. SIL Open Font License 1.1. Unmodified static Regular font.
+Source: https://github.com/google/fonts/tree/main/ofl/vt323
+Font: https://raw.githubusercontent.com/google/fonts/main/ofl/vt323/VT323-Regular.ttf

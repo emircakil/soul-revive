@@ -7,8 +7,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 [assembly: AssemblyProduct("Soul Revive")]
 [assembly: AssemblyDescription("Pixel bonfire desktop companion")]
 
@@ -35,7 +35,7 @@ namespace SoulsRevive
         public static Font Create(float pixels) { Initialize(); return new Font(Family, pixels, FontStyle.Regular, GraphicsUnit.Pixel); }
         public static float TextPixels(float size)
         {
-            return Math.Max(16, (float)Math.Round(size * 1.65f));
+            return Math.Max(18, (float)Math.Round(size * 1.8f));
         }
         [DllImport("gdi32.dll")] static extern IntPtr AddFontMemResourceEx(IntPtr font, uint size, IntPtr reserved, ref uint count);
     }

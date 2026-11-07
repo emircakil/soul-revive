@@ -25,11 +25,11 @@ namespace SoulsRevive
     }
     sealed class PixelCombo : ComboBox
     {
-        public PixelCombo() {DropDownStyle=ComboBoxStyle.DropDownList;DrawMode=DrawMode.OwnerDrawFixed;ItemHeight=28;FlatStyle=FlatStyle.Flat;BackColor=Theme.Panel;ForeColor=Theme.Text;Font=PixelFont.Create(18);}
+        public PixelCombo() {DropDownStyle=ComboBoxStyle.DropDownList;DrawMode=DrawMode.OwnerDrawFixed;ItemHeight=28;FlatStyle=FlatStyle.Flat;BackColor=Theme.Panel;ForeColor=Theme.Text;Font=PixelFont.Create(22);}
         protected override void OnDrawItem(DrawItemEventArgs e)
         {
             using(var b=new SolidBrush((e.State&DrawItemState.Selected)!=0?Theme.Line:Theme.Panel))e.Graphics.FillRectangle(b,e.Bounds);
-            if(e.Index>=0)Theme.Label(e.Graphics,Items[e.Index].ToString(),11,Theme.Text,e.Bounds,ContentAlignment.MiddleLeft,"");
+            if(e.Index>=0)Theme.Label(e.Graphics,Items[e.Index].ToString(),11,Theme.Text,new Rectangle(e.Bounds.X+8,e.Bounds.Y,e.Bounds.Width-16,e.Bounds.Height),ContentAlignment.MiddleLeft,"");
             if((e.State&DrawItemState.Focus)!=0)e.DrawFocusRectangle();
         }
     }
