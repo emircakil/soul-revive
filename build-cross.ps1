@@ -10,11 +10,21 @@ New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 
 $iconPng = Join-Path $projectRoot 'assets\app-icon.png'
 
+# Resolve NuGet package folder
+$nugetDir = ((dotnet nuget locals global-packages --list) -replace '^info :\s*', '' -replace '^global-packages:\s*', '').Trim()
+
 # 1. Linux x64
 Write-Output "Building Linux x64..."
 $linuxOut = Join-Path $stagingDir 'soul-revive-linux-x64'
 New-Item -ItemType Directory -Path $linuxOut -Force | Out-Null
 dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o $linuxOut | Out-Null
+
+# Ensure libraylib.so is in $linuxOut
+$linuxSo = Join-Path $linuxOut 'libraylib.so'
+if (-not (Test-Path $linuxSo)) {
+    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.so' -Recurse | Where-Object { $_.FullName -match 'linux-x64' } | Select-Object -First 1
+    if ($src) { Copy-Item $src.FullName $linuxSo -Force }
+}
 
 # Remove pdb
 Get-ChildItem -Path $linuxOut -Filter '*.pdb' | Remove-Item -Force
@@ -65,9 +75,20 @@ New-Item -ItemType Directory -Path $macArmRes -Force | Out-Null
 dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r osx-arm64 --self-contained -p:PublishSingleFile=true -o $macArmMacOS | Out-Null
 Get-ChildItem -Path $macArmMacOS -Filter '*.pdb' | Remove-Item -Force
 
-Copy-Item (Join-Path $macArmMacOS 'SoulsRevive') (Join-Path $macArmOut 'SoulsRevive')
-Copy-Item (Join-Path $macArmMacOS 'libraylib.dylib') (Join-Path $macArmOut 'libraylib.dylib')
-Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macArmRes 'app-icon.png')
+# Ensure libraylib.dylib is present
+$macArmDylib = Join-Path $macArmMacOS 'libraylib.dylib'
+if (-not (Test-Path $macArmDylib)) {
+    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.dylib' -Recurse | Where-Object { $_.FullName -match 'osx-arm64' } | Select-Object -First 1
+    if ($src) { Copy-Item $src.FullName $macArmDylib -Force }
+}
+
+if (Test-Path (Join-Path $macArmMacOS 'SoulsRevive')) {
+    Copy-Item (Join-Path $macArmMacOS 'SoulsRevive') (Join-Path $macArmOut 'SoulsRevive') -Force
+}
+if (Test-Path $macArmDylib) {
+    Copy-Item $macArmDylib (Join-Path $macArmOut 'libraylib.dylib') -Force
+}
+Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macArmRes 'app-icon.png') -Force
 
 $infoPlist = @"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -125,9 +146,20 @@ New-Item -ItemType Directory -Path $macX64Res -Force | Out-Null
 dotnet publish (Join-Path $crossDir 'SoulsRevive.Cross.csproj') -c Release -r osx-x64 --self-contained -p:PublishSingleFile=true -o $macX64MacOS | Out-Null
 Get-ChildItem -Path $macX64MacOS -Filter '*.pdb' | Remove-Item -Force
 
-Copy-Item (Join-Path $macX64MacOS 'SoulsRevive') (Join-Path $macX64Out 'SoulsRevive')
-Copy-Item (Join-Path $macX64MacOS 'libraylib.dylib') (Join-Path $macX64Out 'libraylib.dylib')
-Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macX64Res 'app-icon.png')
+# Ensure libraylib.dylib is present
+$macX64Dylib = Join-Path $macX64MacOS 'libraylib.dylib'
+if (-not (Test-Path $macX64Dylib)) {
+    $src = Get-ChildItem -Path $nugetDir -Filter 'libraylib.dylib' -Recurse | Where-Object { $_.FullName -match 'osx-x64' } | Select-Object -First 1
+    if ($src) { Copy-Item $src.FullName $macX64Dylib -Force }
+}
+
+if (Test-Path (Join-Path $macX64MacOS 'SoulsRevive')) {
+    Copy-Item (Join-Path $macX64MacOS 'SoulsRevive') (Join-Path $macX64Out 'SoulsRevive') -Force
+}
+if (Test-Path $macX64Dylib) {
+    Copy-Item $macX64Dylib (Join-Path $macX64Out 'libraylib.dylib') -Force
+}
+Copy-Item -LiteralPath $iconPng -Destination (Join-Path $macX64Res 'app-icon.png') -Force
 [IO.File]::WriteAllText((Join-Path $macX64Contents 'Info.plist'), $infoPlist)
 [IO.File]::WriteAllText((Join-Path $macX64Out 'README.txt'), $macReadme)
 
