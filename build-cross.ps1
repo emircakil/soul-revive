@@ -33,6 +33,9 @@ $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 if ($LASTEXITCODE -ne 0) { throw "Publish failed for $Runtime." }
 $binary = Join-Path $publish 'SoulsRevive'
 $library = Join-Path $publish $(if ($Runtime -eq 'linux-x64') { 'libraylib.so' } else { 'libraylib.dylib' })
+if ($native -and $Runtime.StartsWith('osx-')) {
+    & (Join-Path $PSScriptRoot 'packaging/macos/build-raylib.ps1') -BuildDirectory (Join-Path $stage 'native') -Destination $library -Runtime $Runtime
+}
 foreach ($required in @($binary, $library)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing required payload: $required" }
 }

@@ -58,7 +58,7 @@ jobs:
       - name: Build, sign, test and package on target OS
         shell: pwsh
         env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
+          LIBGL_ALWAYS_SOFTWARE: ${{ runner.os == 'Linux' && '1' || '' }}
         run: ./build-cross.ps1 -Runtime '${{ matrix.rid }}'
       - name: Test per-user Linux installation with spaces in path
         if: runner.os == 'Linux'

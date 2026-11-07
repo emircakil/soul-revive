@@ -117,7 +117,7 @@ The Windows native app uses .NET Framework 4.8 and its existing compiler:
 ./verify.ps1
 ```
 
-The portable app uses **.NET 10 SDK**, PowerShell 7 and Raylib-cs 8.1.0. The SDK is selected by `global.json`. End users do not need the SDK or runtime. Build release packages on the matching OS and architecture:
+The portable app uses **.NET 10 SDK**, PowerShell 7 and Raylib-cs 8.1.0. macOS builds also require Git, CMake 3.25+ and Xcode command-line tools. The SDK is selected by `global.json`. End users do not need the SDK or runtime. Build release packages on the matching OS and architecture:
 
 ```powershell
 # Linux x64
@@ -130,7 +130,7 @@ pwsh ./build-cross.ps1 -Runtime osx-x64
 
 On headless Linux, install `xvfb` and `xauth` as well as the graphical libraries listed above. The verification script automatically uses Xvfb when DISPLAY is unset.
 
-Each native build verifies its payload, runs regression checks and a real window/font/render test, creates the archive with executable permissions, extracts it and tests the extracted application again. macOS additionally validates the plist and bundle signature. A missing native library or failed command aborts the build; libraries are resolved from the pinned NuGet dependency, never from an arbitrary cache search.
+Each native build verifies its payload, runs regression checks and a real window/font/render test, creates the archive with executable permissions, extracts it and tests the extracted application again. macOS additionally validates the plist and bundle signature. A missing native library or failed command aborts the build. Linux uses the pinned NuGet native dependency. macOS builds official Raylib 6.0 at commit `dbc56a87da87d973a9c5baa4e7438a9d20121d28` with OpenGL 2.1 and a documented GLFW change allowing Apple's software renderer when accelerated graphics are unavailable. The same native library is tested and shipped, including on GitHub's virtualized Macs; no UI tests are skipped and no test-only replacement library is used. See `packaging/macos/build-raylib.ps1` for the complete build and patch.
 
 For development without packaging:
 

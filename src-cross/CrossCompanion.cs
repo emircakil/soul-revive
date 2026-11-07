@@ -115,6 +115,8 @@ namespace SoulsRevive.Cross
 
             Raylib.SetConfigFlags(ConfigFlags.AlwaysRunWindow | ConfigFlags.HighDpiWindow);
             Raylib.InitWindow(384, 668, "Soul Revive");
+            if (!Raylib.IsWindowReady())
+                throw new InvalidOperationException("Cannot create the desktop window. Check the display session and OpenGL support.");
             Raylib.SetTargetFPS(60);
             Raylib.SetExitKey(KeyboardKey.Null);
             ApplyTopmost();
