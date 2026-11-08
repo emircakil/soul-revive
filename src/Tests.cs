@@ -237,7 +237,7 @@ namespace SoulsRevive
                 settings.ShowSection(3);Render(settings,output,"equipment-settings");
             }
             Check(object.ReferenceEquals(previousEquipment,PixelArt.Equipped),"closing equipment settings without saving preserves active equipment");
-            bool helmetClear=true;
+            bool swordsInFront=true;
             using(var sheet=new Bitmap(1344,468))using(var g=Graphics.FromImage(sheet))using(var font=PixelFont.Create(18))
             {
                 g.Clear(Color.FromArgb(20,25,30));g.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;g.PixelOffsetMode=System.Drawing.Drawing2D.PixelOffsetMode.Half;
@@ -246,8 +246,8 @@ namespace SoulsRevive
                 {
                     var gear=new KnightEquipment(0,swordStyle,0);
                     using(var idle=PixelArt.EquipmentScene(gear,1,false,0,12,false,WorkAction.Idle,0))
-                    for(int frame=8;frame<=103;frame++)using(var pose=PixelArt.EquipmentScene(gear,1,false,0,12,false,WorkAction.Sharpen,frame))
-                        if(!SamePixels(idle,pose,new Rectangle(58,27,16,18)))helmetClear=false;
+                    foreach(int frame in new[]{14,97})using(var pose=PixelArt.EquipmentScene(gear,1,false,0,12,false,WorkAction.Sharpen,frame))
+                        if(SamePixels(idle,pose,new Rectangle(58,27,16,18)))swordsInFront=false;
                     for(int col=0;col<frames.Length;col++)using(var pose=PixelArt.EquipmentScene(gear,1,false,0,12,false,WorkAction.Sharpen,frames[col]))
                     {
                         g.DrawImage(pose,new Rectangle(col*224,swordStyle*156,224,132),new Rectangle(38,20,112,66),GraphicsUnit.Pixel);
@@ -256,7 +256,7 @@ namespace SoulsRevive
                 }
                 sheet.Save(Path.Combine(output,"sword-layer-turn.png"));
             }
-            Check(helmetClear,"all sword variants stay behind the helmet during both sharpening turns");
+            Check(swordsInFront,"all sword variants pass in front of the helmet during both sharpening turns");
             int arrival=PixelArt.TavernArrivalFrames;
             using(var morning=PixelArt.Scene(1,false,arrival+36,6,true))using(var evening=PixelArt.Scene(1,false,arrival+36,23,true))
             {Check(SamePixels(morning,evening),"tavern scene does not change with local time");morning.Save(Path.Combine(output,"tavern-toast.png"));}

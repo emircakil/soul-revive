@@ -48,10 +48,7 @@ namespace SoulsRevive
                 int travel=action==WorkAction.TendFire?(int)Math.Round(24*activity):0;
                 int ox = 65+travel, oy = 26 + (activity>0 ? 0 : bob) + slump;
                 var saved = g.Save(); g.TranslateTransform(ox, oy);
-                // During the turn the blade passes behind the entire upper body,
-                // so it cannot emerge through the neck beneath the helmet.
-                if(action==WorkAction.Sharpen && activity>0 && activity<1)
-                    HeldSword(g,17,35,-90*activity);
+                bool swordTurning=action==WorkAction.Sharpen && activity>0 && activity<1;
                 if((action==WorkAction.Map || action==WorkAction.TendFire) && activity>=.35)HeldSword(g,5,17,135);
                 // A broad, clean cape silhouette with two folds and a restrained breeze.
                 int wind=(int)Math.Round(Math.Sin(frame*Math.PI/32));
@@ -100,6 +97,7 @@ namespace SoulsRevive
                 DrawWorkEquipment(g,action,actionFrame,activity);
                 if(shieldStow>0 && shieldStow<1)
                 {int handX=(int)(-12+20*shieldStow),handY=(int)(35-10*shieldStow);Arm(g,-10,handX,handY);Glove(g,handX,handY);}
+                var foreground=g.Save();
                 // Hands hold the paper still while the helm slowly scans left and right.
                 int look=action==WorkAction.Map ? (int)Math.Round(2*activity*Math.Sin((actionFrame-24)*Math.PI/32)) : 0;
                 if(action==WorkAction.Map)g.TranslateTransform((float)Math.Round(activity)+look,(float)Math.Round(2*activity));
@@ -111,6 +109,11 @@ namespace SoulsRevive
                 R(g,"#272E37",-6,9,13,3); R(g, health < .25 ? "#E48F63" : "#D4BB85",-4,10,8,1);
                 R(g,"#C0C8C8",-1+look,6,2,11); R(g,"#56616A",-5,14,3,1); R(g,"#56616A",3,14,2,1);
                 R(g,"#87949B",-5,17,11,2); R(g,"#393F48",-3,19,7,2);
+                g.Restore(foreground);
+                // Keep the turning blade in front of the cape, armor and helmet.
+                // The glove remains above the hilt at the same fixed grip anchor.
+                if(swordTurning)
+                {HeldSword(g,17,35,-90*activity);Glove(g,17,35);}
                 g.Restore(saved);
         }
         static void Arm(Graphics g,int shoulderX,int handX,int handY)

@@ -26,7 +26,7 @@ $arch = if ($Runtime -eq 'osx-arm64') { 'arm64' } else { 'x86_64' }
 # This 2D shell needs no GL 3.x features. A 2.1 context works with both Apple's
 # hardware drivers and its software renderer on virtualized Macs. This exact
 # library is shipped and tested; CI does not substitute a different renderer.
-& cmake -S $source -B $build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF -DOPENGL_VERSION=2.1 "-DCMAKE_OSX_ARCHITECTURES=$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+& cmake -S $source -B $build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF "-DOPENGL_VERSION=2.1" "-DCMAKE_OSX_ARCHITECTURES=$arch" "-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0"
 if ($LASTEXITCODE -ne 0) { throw 'Native raylib configure failed.' }
 & cmake --build $build --config Release --parallel 3
 if ($LASTEXITCODE -ne 0) { throw 'Native raylib build failed.' }

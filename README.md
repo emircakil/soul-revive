@@ -1,4 +1,4 @@
-# Soul Revive 1.3 — Pixel Bonfire Desktop Companion
+# Soul Revive 1.3.1 — Pixel Bonfire Desktop Companion
 
 A small Windows, macOS, and Linux work and break companion with an original pixel knight, a bonfire, a changing sky, a cozy tavern, and an offline soundscape. Available in Türkçe and English.
 

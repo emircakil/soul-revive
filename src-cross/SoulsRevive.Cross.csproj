@@ -5,8 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>SoulsRevive</AssemblyName>
     <RootNamespace>SoulsRevive</RootNamespace>
-    <AssemblyVersion>1.3.0.0</AssemblyVersion>
-    <FileVersion>1.3.0.0</FileVersion>
+    <AssemblyVersion>1.3.1.0</AssemblyVersion>
+    <FileVersion>1.3.1.0</FileVersion>
     <Product>Soul Revive</Product>
     <Description>Pixel bonfire desktop companion for Windows, macOS, and Linux</Description>
     <Nullable>disable</Nullable>
