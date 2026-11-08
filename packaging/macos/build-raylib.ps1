@@ -35,6 +35,6 @@ $library = Join-Path $build 'raylib/libraylib.dylib'
 [IO.File]::WriteAllBytes($Destination, [IO.File]::ReadAllBytes($library))
 & install_name_tool -id '@rpath/libraylib.dylib' $Destination
 if ($LASTEXITCODE -ne 0) { throw 'Cannot set native library install name.' }
-& lipo -verify_arch $arch $Destination
+& lipo $Destination -verify_arch $arch
 if ($LASTEXITCODE -ne 0) { throw 'Wrong native library architecture.' }
 Copy-Item (Join-Path $source 'LICENSE') (Join-Path ([IO.Path]::GetDirectoryName($Destination)) 'RAYLIB-LICENSE.txt')
