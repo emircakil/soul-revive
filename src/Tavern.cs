@@ -38,8 +38,10 @@ namespace SoulsRevive
                 DrawTavernKnight(g,124,frame,true,false);
                 if(frame<TavernArrivalFrames)
                 {
-                    int x=-15+(79*frame)/(TavernArrivalFrames-1);
-                    DrawTavernKnight(g,x,frame,false,true);
+                    // Walk in, then lower into the chair over the last few frames instead of snapping seated.
+                    const int walkFrames=TavernArrivalFrames-6;
+                    if(frame<walkFrames) DrawTavernKnight(g,-15+(79*frame)/(walkFrames-1),frame,false,true);
+                    else DrawTavernKnight(g,64,frame,false,false,(int)Math.Round(3*(1-Smooth((frame-walkFrames+1)/7.0))));
                     DrawTankard(g,83,57,false,0);DrawTankard(g,106,57,true,0);
                 }
                 else
@@ -104,11 +106,12 @@ namespace SoulsRevive
         static void DrawTavernChair(Graphics g,int x)
         {R(g,"#281F1C",x,54,5,29);R(g,"#8F5F38",x+1,55,3,26);R(g,"#AD7D46",x,55,5,2);R(g,"#69422A",x,72,17,4);R(g,"#B3844E",x,72,17,1);R(g,"#3A291F",x+12,76,3,7);}
 
-        static void DrawTavernKnight(Graphics g,int x,int frame,bool solaire,bool walking)
-        {using(new ArmorInk(!solaire))DrawTavernKnightCore(g,x,frame,solaire,walking);}
-        static void DrawTavernKnightCore(Graphics g,int x,int frame,bool solaire,bool walking)
+        static void DrawTavernKnight(Graphics g,int x,int frame,bool solaire,bool walking,int sitting=-1)
+        {using(new ArmorInk(!solaire))DrawTavernKnightCore(g,x,frame,solaire,walking,sitting);}
+        /// <param name="sitting">While lowering into the chair: how many pixels the torso is still raised; -1 otherwise.</param>
+        static void DrawTavernKnightCore(Graphics g,int x,int frame,bool solaire,bool walking,int sitting)
         {
-            int breath=walking?-(int)Math.Round(Math.Abs(Math.Sin(frame*Math.PI/4))):((frame/12+(solaire?1:0))%2);
+            int breath=walking?-(int)Math.Round(Math.Abs(Math.Sin(frame*Math.PI/4))):sitting>=0?-sitting:((frame/12+(solaire?1:0))%2);
             var saved=g.Save();g.TranslateTransform(x,breath);
             // Rust-red cape for the player; green sleeves and a white sun surcoat for Solaire.
             if(!solaire)
@@ -121,9 +124,12 @@ namespace SoulsRevive
             }
             else
             {
+                // Seated legs stay on the chair and floor; only the upper body breathes.
+                var seat=g.Save();g.TranslateTransform(0,-breath);
                 int knee=solaire?-12:6;
                 R(g,"#35404A",-6,68,13,6);R(g,"#65717A",-5,68,11,3);
                 R(g,"#47525C",knee,72,6,8);R(g,"#98A3A5",knee,73,3,5);R(g,"#263039",knee-1,79,10,3);
+                g.Restore(seat);
             }
             R(g,"#293039",-9,51,18,18);
             if(solaire)
@@ -163,7 +169,7 @@ namespace SoulsRevive
                 R(g,"#26333B",2,42,7,3);R(g,"#E9CB8C",5,43,4,1);
                 R(g,"#BFCCC6",7,45,2,4);R(g,"#788E93",-3,50,10,2);
                 R(g,"#B5C3BD",1,50,5,1);
-                if(walking) {R(g,"#91A6AD",5,54,5,11);R(g,"#C7D0C4",6,54,3,2);R(g,"#869B9F",6,64,4,4);}
+                if(walking || sitting>=0) {R(g,"#91A6AD",5,54,5,11);R(g,"#C7D0C4",6,54,3,2);R(g,"#869B9F",6,64,4,4);}
             }
             g.Restore(saved);
         }

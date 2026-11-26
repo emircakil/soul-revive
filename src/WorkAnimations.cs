@@ -37,16 +37,25 @@ namespace SoulsRevive
     {
         static double WorkEnvelope(int frame)
         {return Math.Max(0,Math.Min(1,Math.Min((frame-8)/16.0,(WorkRoutine.Duration-9-frame)/16.0)));}
-        static void DrawWorkingKnight(Graphics g,double health,int frame,WorkAction action,int actionFrame)
+        /// <summary>Frames (8 per second) the knight takes to sink to one knee when a round runs out.</summary>
+        public const int KneelFrames = 4;
+        // Body drop for each collapse frame; the last one is the kneeling pose.
+        static readonly int[] KneelDrop = { 0, 2, 4, 5, 7 };
+        /// <summary>Advances the collapse one animation frame: down while the round is expired, back up otherwise.</summary>
+        public static int StepKneel(int kneel, bool expired) { return expired ? Math.Min(KneelFrames, kneel + 1) : Math.Max(0, kneel - 1); }
+        static void DrawWorkingKnight(Graphics g,double health,int frame,WorkAction action,int actionFrame,int kneel=-1)
         {
             double beat=2*Math.PI*(frame%16)/16;
-                int bob = (int)Math.Round(Math.Sin(beat / 2 + (frame / 16 % 2) * Math.PI));
-                int slump = health <= 0 ? 7 : 0;
+                int stage = kneel < 0 ? (health <= 0 ? KneelFrames : 0) : Math.Min(KneelFrames, kneel);
+                bool kneeling = stage >= KneelFrames;
+                int slump = KneelDrop[stage];
                 double activity = WorkEnvelope(actionFrame);
-                if(action==WorkAction.Idle || health<=0)activity=0;
-                double shieldStow=action==WorkAction.Idle || health<=0 ? 0 : Math.Max(0,Math.Min(1,Math.Min(actionFrame/8.0,(111-actionFrame)/8.0)));
+                if(action==WorkAction.Idle || health<=0 || stage>0)activity=0;
+                // Breathing fades out as a task begins (and back in after), so the body never snaps by a pixel.
+                int bob = (int)Math.Round(Math.Sin(beat / 2 + (frame / 16 % 2) * Math.PI) * (1 - activity));
+                double shieldStow=action==WorkAction.Idle || health<=0 || stage>0 ? 0 : Math.Max(0,Math.Min(1,Math.Min(actionFrame/8.0,(111-actionFrame)/8.0)));
                 int travel=action==WorkAction.TendFire?(int)Math.Round(24*activity):0;
-                int ox = 65+travel, oy = 26 + (activity>0 ? 0 : bob) + slump;
+                int ox = 65+travel, oy = 26 + bob + slump;
                 var saved = g.Save(); g.TranslateTransform(ox, oy);
                 bool swordTurning=action==WorkAction.Sharpen && activity>0 && activity<1;
                 if((action==WorkAction.Map || action==WorkAction.TendFire) && activity>=.35)HeldSword(g,5,17,135);
@@ -58,15 +67,17 @@ namespace SoulsRevive
                 Poly(g,"#60343D",-4,22,7,20,11,31,15+wind,46,9,46,3,41);
                 Poly(g,"#9B584E",5,22,8,30,11+wind,44,8,43,3,29);
                 var legs=g.Save();
-                g.TranslateTransform(0,activity>0 ? 0 : -bob);
-                if (slump == 0)
+                g.TranslateTransform(0,-bob);
+                if (!kneeling)
                 {
-                    R(g,"#22272E",-7,35,8,18); R(g,"#22272E",4,35,8,18);
-                    R(g,"#58626E",-6,36,6,13); R(g,"#7F8B97",-6,37,2,10);
-                    R(g,"#485360",5,36,6,13); R(g,"#707D89",5,37,2,10);
-                    R(g,"#A1ABB2",-7,39,7,3); R(g,"#8A97A0",4,39,8,3);
-                    R(g,"#2E3540",-10,49,11,5); R(g,"#7F8A93",-9,49,9,2);
-                    R(g,"#2E3540",4,49,12,5); R(g,"#7F8A93",5,49,9,2);
+                    // While sinking, the knees bend: shins shorten and the feet stay planted on the ground.
+                    int bend = slump;
+                    R(g,"#22272E",-7,35,8,18-bend); R(g,"#22272E",4,35,8,18-bend);
+                    R(g,"#58626E",-6,36,6,13-bend); R(g,"#7F8B97",-6,37,2,Math.Max(1,10-bend));
+                    R(g,"#485360",5,36,6,13-bend); R(g,"#707D89",5,37,2,Math.Max(1,10-bend));
+                    R(g,"#A1ABB2",-7-bend/2,39-bend/2,7,3); R(g,"#8A97A0",4+bend/2,39-bend/2,8,3);
+                    R(g,"#2E3540",-10,49-bend,11,5); R(g,"#7F8A93",-9,49-bend,9,2);
+                    R(g,"#2E3540",4,49-bend,12,5); R(g,"#7F8A93",5,49-bend,9,2);
                 }
                 else
                 {
@@ -214,7 +225,12 @@ namespace SoulsRevive
                     DrawWorkLog(g,logX,logY,flight*180);
                 }
                 else if(frame>=72 && frame<88)
-                    DrawWorkLog(g,39,52,0);
+                {
+                    // The log settles into the flames and burns down instead of vanishing.
+                    double burn=(frame-72)/16.0;
+                    DrawWorkLog(g,39,52+(int)Math.Round(2*burn),0,burn);
+                    if(frame%3==0)R(g,burn<.5?"#FFD48B":"#DF9250",36+(frame*7)%9,47-(frame-72)/2,1,1);
+                }
 
             }
         }
@@ -232,11 +248,22 @@ namespace SoulsRevive
                 R(g,age<2?"#FFE7AC":age<4?"#DFA052":"#9B633C",x,y,1,1);
             }
         }
-        static void DrawWorkLog(Graphics g,int x,int y,double angle)
+        static void DrawWorkLog(Graphics g,int x,int y,double angle,double burn=0)
         {
             var saved=g.Save();g.TranslateTransform(x,y);g.RotateTransform((float)angle);
-            R(g,"#4B3025",-11,-3,23,7);R(g,"#96613A",-10,-2,21,4);
-            R(g,"#C28A50",9,-2,3,4);R(g,"#BC8550",-8,-2,12,1);
+            if(burn<=0)
+            {
+                R(g,"#4B3025",-11,-3,23,7);R(g,"#96613A",-10,-2,21,4);
+                R(g,"#C28A50",9,-2,3,4);R(g,"#BC8550",-8,-2,12,1);
+            }
+            else
+            {
+                // Charring from the ends inward: dark bark, then glowing embers, then nothing.
+                int half=(int)Math.Round(11*(1-.75*burn));
+                R(g,"#2A1A16",-half,-3+(int)(burn*2),half*2+1,7-(int)(burn*2));
+                R(g,burn<.45?"#7A3A22":"#A2412A",-half+1,-2+(int)(burn*2),half*2-1,Math.Max(1,4-(int)(burn*3)));
+                R(g,burn<.6?"#E6853E":"#B9502C",-half+2,-2+(int)(burn*2),Math.Max(1,half-1),1);
+            }
             g.Restore(saved);
         }
     }

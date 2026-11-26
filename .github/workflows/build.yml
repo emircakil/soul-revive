@@ -2,7 +2,10 @@ name: Build and check all platforms
 on:
   push:
     branches: ['**']
+    # Documentation and README media do not change the build; skip the four-platform matrix.
+    paths-ignore: ['**/*.md', 'assets/readme/**', '.github/ISSUE_TEMPLATE/**', 'LICENSE*']
   pull_request:
+    paths-ignore: ['**/*.md', 'assets/readme/**', '.github/ISSUE_TEMPLATE/**', 'LICENSE*']
   workflow_dispatch:
 permissions:
   contents: read

@@ -39,10 +39,9 @@ if ($native -and $Runtime.StartsWith('osx-')) {
 foreach ($required in @($binary, $library)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing required payload: $required" }
 }
-$version = ([xml](Get-Content -LiteralPath $project -Raw)).Project.PropertyGroup.AssemblyVersion
+# Directory.Build.props is the single version source for Windows, macOS and Linux.
+$version = ([xml](Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version | Select-Object -First 1
 $version = ([version]$version).ToString(3)
-$expected = [regex]::Match((Get-Content (Join-Path $PSScriptRoot 'src/Experience.cs') -Raw), 'AssemblyVersion\("([\d.]+)"\)').Groups[1].Value
-if ($version -ne ([version]$expected).ToString(3)) { throw 'Windows and portable versions differ.' }
 if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag does not match assembly version.' }
 Copy-Item (Join-Path $PSScriptRoot 'assets/fonts/VT323-OFL.txt') (Join-Path $package 'FONT-LICENSE.txt')
 if ($Runtime.StartsWith('osx-')) {

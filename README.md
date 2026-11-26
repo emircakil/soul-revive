@@ -1,4 +1,4 @@
-# Soul Revive 1.3.1 — Pixel Bonfire Desktop Companion
+# Soul Revive 1.4.0 — Pixel Bonfire Desktop Companion
 
 A small Windows, macOS, and Linux work and break companion with an original pixel knight, a bonfire, a changing sky, a cozy tavern, and an offline soundscape. Available in Türkçe and English.
 
@@ -12,7 +12,7 @@ A work round's dawn, daylight, sunset, and night compressed into a **22-second l
 
 ### Chill mode — a toast with Solaire
 
-The knight enters the tavern, joins Solaire, and shares a toast. Both characters take turns sipping in this **20-second loop**.
+The knight enters the tavern, settles into the chair, joins Solaire, and shares a toast. Both characters take turns sipping in this **20-second loop**.
 
 ![The knight arrives at the tavern, toasts with Solaire, and shares a drink](assets/readme/solaire-chill.gif)
 
@@ -63,34 +63,48 @@ The timer, statistics, equipment and original knight/tavern animations share the
 | --- | --- | --- |
 | Work/break/chill, statistics, themes, Turkish/English, equipment | Yes | Yes |
 | Offline soundscape and reminder audio | Yes | Yes; gracefully disabled without an audio device |
+| Break reminders | Tray notification, taskbar flash | Desktop notification (`notify-send` / macOS Notification Center) |
+| Snooze, long breaks, daily goal, history and streak | Yes | Yes |
+| Idle pause (opt-in) | Yes | macOS; GNOME, or X11 sessions on Linux |
 | Developer animation panel | Separate 4x preview window | Embedded preview, frame stepping, timeline and 0.5x/1x/2x playback |
 | Settings | Save/Cancel | Save/Cancel; Escape cancels |
-| Minimize / close | Hide to tray | Minimize to Dock/taskbar / save and quit |
+| Minimize / close | Minimize to taskbar / hide to tray | Minimize to Dock/taskbar / save and quit |
 | Move window | Drag app | Drag native title bar |
 | Always on top | Yes | Requested from window manager; compositor rules may override |
-| Automatic pause | Screen lock, suspend, long timer gaps | Suspend/clock jumps or gaps over 5 seconds; pause manually before locking the screen |
-| Startup integration / in-app binary updater | Yes | Use OS login items / replace the downloaded application |
+| Automatic pause | Screen lock, suspend, long timer gaps | Screen lock (macOS; logind/GNOME/freedesktop on Linux), suspend, clock jumps or gaps over 5 seconds |
+| Start at sign-in | Yes, quietly in the tray | Yes: LaunchAgent on macOS, XDG autostart on Linux (starts minimized) |
+| Updates | In-app download, verify and restart | In-app check with a link to the release page; replace the downloaded application |
+| Second launch | Shows the running window | Brings the running window forward |
 
-The Windows-specific tray, startup and updater instructions below apply to Windows. On macOS/Linux, quitting stops the timer; minimizing keeps it running. Audio playback changes apply on Save.
+The Windows-specific tray and updater instructions below apply to Windows. On macOS/Linux, quitting stops the timer; minimizing keeps it running. If the portable app stops unexpectedly it shows an alert and writes `crash.log` to the profile folder.
+
+Windows scales the whole interface with the display (125%, 150%, 200%…) instead of stretching a blurry bitmap, and keeps the window on screen. Set `SOULSREVIVE_UI_SCALE` (for example `1.5`) to override the detected scale.
 
 ## Your bonfire
 
-- **Çalışıyorum / Working:** every work round begins at dawn, moves through daylight and sunset, and ends after dark. The default round is 30 minutes, followed by a 3-minute break. Choose work durations of 1–180 minutes and breaks of 1–30 minutes in Settings.
-- During active work, the knight randomly sharpens his sword, holds a map still and scans it with his head, or walks toward the bonfire to toss a log. The shield is quickly stowed before handling props; tiny sparks scatter at the sharpening contact point, sharpening stops before the sword rises, and tossed logs follow an independent arc. Each routine lasts 14 seconds, with 10–20 seconds of quiet idle between routines. Pausing freezes the routine; break and mode changes reset it. Sword grips and props share the hands’ pose coordinates.
-- **Mola ver / Take a break:** your knight lies down beside the fire and sleeps, with breathing and floating Z animations. Stand up, walk, or stretch while the timer runs. Completing a break restores health and starts a new dawn. Returning early starts a fresh work round without awarding a completed break.
+- **Çalışıyorum / Working:** every work round begins at dawn, moves through daylight and sunset, and ends after dark. The bonfire burns lower as the round runs out and recovers during your break. When the round ends, the exhausted knight sinks to one knee (and rises again if you snooze); the moon, stars and clouds fade with the light. The default round is 30 minutes, followed by a 3-minute break. Choose work durations of 1–180 minutes and breaks of 1–30 minutes in Settings.
+- During active work, the knight randomly sharpens his sword, holds a map still and scans it with his head, or walks toward the bonfire to toss a log. The shield is quickly stowed before handling props; tiny sparks scatter at the sharpening contact point, sharpening stops before the sword rises, and tossed logs follow an independent arc. The tossed log catches, chars and burns away while the fire flares. Each routine lasts 14 seconds, with 10–20 seconds of quiet idle between routines; breathing eases in and out of each routine so the knight never jumps by a pixel. Pausing freezes the routine; break and mode changes reset it. Sword grips and props share the hands’ pose coordinates.
+- **Mola ver / Take a break:** your knight lies down beside the fire and sleeps, breathing slowly while small z's grow and fade into the night. Stand up, walk, or stretch while the timer runs. Completing a break restores health and starts a new dawn. **Çalışmaya dön / Return to work** ends a break early and starts a fresh work round without awarding a completed break.
+- **Ertele / Snooze:** when a round ends, the second button becomes **5 dk ertele / Snooze 5 min**. The round is counted once and you are reminded again after five minutes.
+- **Uzun mola / Long break:** optionally make every Nth break a longer one (Settings > Timer). The button and status line announce it in advance.
+- **Shortcuts:** Space pauses/resumes (or snoozes), B starts or ends a break, C toggles chill mode, F8 opens the developer panel.
 - **Çalışmıyorum / Chill mode:** your knight enters a cozy pixel tavern and sits down with Solaire of Astora. They clink tankards, take turns sipping, and relax by the hearth. The tavern keeps its warm evening lighting regardless of the computer's time; a **Şerefe! / Cheers!** greeting replaces the clock. The work timer and work statistics stop. Returning to Working starts a new round at dawn.
-- **Duraklat / Pause:** freezes the timer and work statistics. Sleep or a timer gap over five seconds also pauses work; Windows additionally pauses on screen lock. Resume manually when you return.
-- Open Settings with the title-bar gear button. On Windows, **_ / X** hide the app to the tray; the timer continues. Double-click the tray bonfire to reveal it, or right-click and choose **Çıkış / Quit** to exit. On macOS/Linux, minimize keeps running and close saves and quits.
+- **Duraklat / Pause:** freezes the timer and work statistics. Sleep, screen lock or a timer gap over five seconds also pauses work. Resume manually when you return.
+- **Boştayken duraklat / Pause when idle (opt-in):** if the keyboard and mouse are unused for the chosen number of minutes, the timer pauses and that idle time is removed from your work statistics. Only the time of the last input is read, never its content.
+- When a break is due, Soul Revive notifies you and flashes its taskbar button without stealing keyboard focus. Turn on **Mola zamanı pencereyi öne getir / Bring the window forward when a break is due** to have it jump in front instead.
+- Open Settings with the title-bar gear button. On Windows, **_** minimizes to the taskbar and **X** hides the app to the tray; the timer continues in both cases. Restore the minimized window from the taskbar, or double-click the tray bonfire to reveal it. Right-click the tray icon and choose **Çıkış / Quit** to exit. When started at Windows sign-in, the app waits in the tray instead of opening on top of your desktop. On macOS/Linux, minimize keeps running and close saves and quits.
 
 ## Settings and statistics
 
-**Genel / General:** choose Türkçe or English, Dark mode or Lit mode, timer durations, always-on-top, reminder sounds, and Windows startup. The pixel font is embedded, including Turkish characters; no font installation is needed. Changing durations starts a new round. Other settings preserve your timer.
+**Genel / General:** choose Türkçe or English, Dark mode or Lit mode, always-on-top, reminder sounds, and start at sign-in. The pixel font is embedded, including Turkish characters; no font installation is needed.
 
-**Sesler / Sounds:** enable **Müzik ve ortam seslerini çal / Play music and ambience**, set independent **Fire**, **Ambience**, and **Music** volumes from 0–100%, then select Save for continuous background playback. Fire crackle, wind, and the bonfire melody mix together. Windows additionally offers separate preview/stop playback before saving. Reminder sounds use independent playback, and saved audio preferences apply again at launch. All layers are synthesized locally and work offline. Reminder sounds have their own checkbox. Soundscape playback starts disabled until enabled here.
+**Zaman / Timer:** work and break durations, long breaks (every N rounds, 0 = off, and their length), a daily goal in minutes, idle pause and its threshold, and whether a due break brings the window forward. Changing work or break durations starts a new round. Other settings preserve your timer.
 
-**İstatistikler / Statistics:** shows lifetime work hours, today's work hours, completed work rounds, and today's completed breaks and movement minutes. The main window displays today's and lifetime work in hours, minutes and seconds; the statistics dialog refreshes while open. Today's total rolls over at midnight, and lifetime hours keep accumulating across restarts and updates. Only active timer seconds count as work; pauses, breaks, chill, time after expiry, and time while the app is closed are excluded. Lifetime tracking starts with version 1.1; older versions did not record work hours.
+**Sesler / Sounds:** enable **Müzik ve ortam seslerini çal / Play music and ambience**, set independent **Fire**, **Ambience**, and **Music** volumes from 0–100%, then select Save for continuous background playback. Fire crackle, wind, and the bonfire melody mix together. Preview lets you hear changes before saving. Volume steps are 5%. The loop is seamless: no gap or dip when it repeats. Reminder sounds use independent playback, and saved audio preferences apply again at launch. All layers are synthesized locally and work offline. Reminder sounds have their own checkbox. Soundscape playback starts disabled until enabled here.
 
-Data is saved locally every 5 seconds and on state changes, closing the window or exit to `%LOCALAPPDATA%\SoulsRevive\settings.json`. Work totals are also stored independently in `statistics.json`. Both files use atomic backups, and older settings automatically migrate existing hours. Statistics recover independently if settings become damaged. In-app updates retain the active profile and its work history. The app uses no camera or movement detection. Uninstall through Windows Installed Apps; settings and work history are retained for reinstalling.
+**İstatistikler / Statistics:** shows lifetime work hours, today's work hours (and daily-goal progress), completed work rounds, today's completed breaks and movement minutes, your streak of days meeting the goal (or with any work when no goal is set), and a chart of the last seven days. The last 60 days are kept. **Sıfırla / Reset** clears all statistics and history after a confirmation. The main window displays today's and lifetime work in hours, minutes and seconds; the statistics dialog refreshes while open. Today's total rolls over at midnight, and lifetime hours keep accumulating across restarts and updates. Only active timer seconds count as work; pauses, breaks, chill, time after expiry, and time while the app is closed are excluded. Lifetime tracking starts with version 1.1; older versions did not record work hours.
+
+Data is saved locally every 5 seconds while the timer is running, and on state changes, closing the window or exit to `%LOCALAPPDATA%\SoulsRevive\settings.json`. Work totals are also stored independently in `statistics.json`. Both files use atomic backups, and older settings automatically migrate existing hours. Statistics recover independently if settings become damaged. In-app updates retain the active profile and its work history. The app uses no camera or movement detection. Uninstall through Windows Installed Apps; settings and work history are retained for reinstalling.
 
 ## Knight equipment
 
@@ -110,7 +124,7 @@ The release must contain an asset named **SoulsRevive.exe** with a GitHub-provid
 
 ## Build and verify
 
-The Windows native app uses .NET Framework 4.8 and its existing compiler:
+The Windows app targets .NET Framework 4.8, which is part of Windows, so users still install nothing. It is built with the **.NET 10 SDK** (selected by `global.json`) from `src/SoulsRevive.Windows.csproj`, using modern C# and the .NET analyzers:
 
 ```powershell
 ./build.ps1
@@ -148,16 +162,20 @@ Outputs:
 - `bin/soul-revive-macos-arm64.tar.gz`, `bin/soul-revive-macos-x64.tar.gz` — macOS app bundles.
 - Each portable archive has a `.sha256` file. The release job creates one combined `SHA256SUMS.txt`.
 
-`verify.ps1` covers Windows timers, statistics, migration, recovery, localization, sound layers, artwork, installer and updater rollback. `verify-cross.ps1` covers the shared core, fractional break accounting, expired-session reload, midnight rollover, atomic profile recovery, single-instance locking, every animation frame, equipment, sound synthesis, Turkish glyphs and settings transactions. It exports 32 UI previews across both languages/themes. Test profiles are isolated from real statistics.
+`verify.ps1` covers Windows timers, snooze, long breaks, idle rollback, history and streaks, statistics reset, migration, recovery, localization, seamless sound loops, artwork, installer and updater rollback. `verify-cross.ps1` covers the shared core, fractional break accounting, expired-session reload, midnight rollover, atomic profile recovery, single-instance hand-off, crash logging, autostart files, update checks, every animation frame, equipment, sound synthesis, Turkish glyphs and settings transactions. It exports 40 UI previews across both languages/themes. Test profiles are isolated from real statistics.
+
+User-visible text, formats and the colour palette live in `src/Presentation.cs`, and sound synthesis in `src/SoundSynth.cs`; both shells use them, so Windows and macOS/Linux stay consistent.
 
 ## Publish a release
 
-1. Keep the versions in `src/Experience.cs` and `src-cross/SoulsRevive.Cross.csproj` identical.
+1. Set the version once in `Directory.Build.props`; every build reads it.
 2. Build and verify, commit, then push a matching tag such as `v1.3.0`.
 3. The reusable `.github/workflows/platforms.yml` builds on Windows, Ubuntu x64, macOS ARM64 and macOS Intel. Both regular CI and releases use this same verification pipeline.
 4. The release job waits for **all** platforms, checks the complete asset set, generates combined checksums and only then publishes to GitHub Releases.
 
 Building locally does not publish anything. Apple Developer ID signing/notarization is not configured.
+
+**Windows code signing (optional):** add the repository secrets `WINDOWS_SIGNING_PFX` (base64-encoded .pfx) and `WINDOWS_SIGNING_PASSWORD`. Release builds then Authenticode-sign `SoulsRevive.exe` and the installer; locally, set `SOULREVIVE_SIGN_PFX` and `SOULREVIVE_SIGN_PASSWORD` before `./build.ps1`. Once a signed version is installed, the in-app updater only accepts updates with a valid signature from the same publisher. Regular CI builds stay unsigned. Actions are pinned to commit SHAs and kept current by Dependabot.
 
 ## Artwork and font
 

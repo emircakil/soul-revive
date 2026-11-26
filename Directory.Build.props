@@ -1,0 +1,13 @@
+<Project>
+  <!-- Single source for the version of every build (Windows, macOS, Linux). Release tags must match. -->
+  <PropertyGroup>
+    <Version>1.4.0</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+    <Product>Soul Revive</Product>
+    <Company>Soul Revive</Company>
+    <Copyright>Soul Revive contributors</Copyright>
+    <Deterministic>true</Deterministic>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>

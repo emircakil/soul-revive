@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Windows app on .NET Framework 4.8 (built into Windows; users install nothing), compiled with the
+    modern .NET SDK compiler. One project, several outputs chosen with -p:Flavor (see build.ps1):
+      App         SoulsRevive.exe
+      Setup       SoulRevive-Setup.exe, embedding the App build passed as -p:SetupPayload=<path>
+      Artwork     temporary tool that regenerates assets/app.ico before the App build
+      ReadmeGifs  README animation exporter (export-readme-gifs.ps1)
+  -->
+  <PropertyGroup>
+    <Flavor Condition="'$(Flavor)' == ''">App</Flavor>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>SoulsRevive</AssemblyName>
+    <RootNamespace>SoulsRevive</RootNamespace>
+    <StartupObject>SoulsRevive.Program</StartupObject>
+    <Description>Pixel bonfire desktop companion</Description>
+    <ApplicationIcon>..\assets\app.ico</ApplicationIcon>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <IntermediateOutputPath>obj\$(Configuration)\$(Flavor)\</IntermediateOutputPath>
+    <OutputPath>bin\$(Configuration)\$(Flavor)\</OutputPath>
+    <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+    <!-- Ship one .exe like before: no generated .exe.config. -->
+    <GenerateSupportedRuntime>false</GenerateSupportedRuntime>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-minimum</AnalysisLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Flavor)' == 'Setup'">
+    <AssemblyName>SoulRevive-Setup</AssemblyName>
+    <StartupObject>SoulsRevive.SetupProgram</StartupObject>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Flavor)' == 'Artwork'">
+    <AssemblyName>SoulRevive.Artwork</AssemblyName>
+    <ApplicationIcon></ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Flavor)' == 'ReadmeGifs'">
+    <AssemblyName>ReadmeGifs</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <StartupObject>SoulsRevive.ReadmeGifs</StartupObject>
+    <ApplicationIcon></ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="..\tools\ReadmeGifs.cs" Condition="'$(Flavor)' == 'ReadmeGifs'" />
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Runtime.Serialization" />
+    <EmbeddedResource Include="..\assets\fonts\VT323-Regular.ttf" LogicalName="PixelFont.ttf" />
+    <EmbeddedResource Include="..\assets\fonts\VT323-OFL.txt" LogicalName="PixelFont.License" />
+    <EmbeddedResource Include="$(SetupPayload)" LogicalName="SoulsRevive.Payload" Condition="'$(Flavor)' == 'Setup'" />
+  </ItemGroup>
+  <Target Name="RequireSetupPayload" BeforeTargets="BeforeBuild" Condition="'$(Flavor)' == 'Setup' And !Exists('$(SetupPayload)')">
+    <Error Text="Setup builds need -p:SetupPayload=path\to\SoulsRevive.exe (build.ps1 passes it)." />
+  </Target>
+</Project>

@@ -11,7 +11,7 @@ namespace SoulsRevive
     {
         IntPtr device, samples, header;
         bool prepared;
-        readonly uint headerSize = (uint)Marshal.SizeOf(typeof(WaveHeader));
+        readonly uint headerSize = (uint)Marshal.SizeOf<WaveHeader>();
 
         public LoopingAudio(byte[] wave)
         {
@@ -32,13 +32,13 @@ namespace SoulsRevive
                 Marshal.StructureToPtr(new WaveHeader { Data = samples, Length = (uint)length }, header, false);
                 Check(waveOutPrepareHeader(device, header, headerSize));
                 prepared = true;
-                var buffer = (WaveHeader)Marshal.PtrToStructure(header, typeof(WaveHeader));
+                var buffer = Marshal.PtrToStructure<WaveHeader>(header);
                 buffer.Flags |= 4 | 8; // WHDR_BEGINLOOP | WHDR_ENDLOOP, single PCM block.
                 buffer.Loops = uint.MaxValue;
                 Marshal.StructureToPtr(buffer, header, false);
                 Check(waveOutWrite(device, header, headerSize));
             }
-            catch { Dispose(); throw; }
+            catch { Release(); throw; }
         }
 
         internal uint PlaybackBytes
@@ -47,24 +47,24 @@ namespace SoulsRevive
             {
                 if (device == IntPtr.Zero) return 0;
                 var time = new WaveTime { Type = 4 }; // TIME_BYTES
-                Check(waveOutGetPosition(device, ref time, (uint)Marshal.SizeOf(typeof(WaveTime))));
+                Check(waveOutGetPosition(device, ref time, (uint)Marshal.SizeOf<WaveTime>()));
                 if (time.Type == 2) return time.Value * 2;
                 if (time.Type == 1) return time.Value * 32;
                 return time.Value;
             }
         }
 
-        public void Dispose()
+        // Dispose never throws: a failing driver call must not leave the device open or leak buffers.
+        public void Dispose() { Release(); GC.SuppressFinalize(this); }
+        ~LoopingAudio() { Release(); }
+
+        void Release()
         {
             if (device != IntPtr.Zero)
             {
-                Check(waveOutReset(device));
-                if (prepared)
-                {
-                    Check(waveOutUnprepareHeader(device, header, headerSize));
-                    prepared = false;
-                }
-                Check(waveOutClose(device));
+                _ = waveOutReset(device);
+                if (prepared) { _ = waveOutUnprepareHeader(device, header, headerSize); prepared = false; }
+                _ = waveOutClose(device);
                 device = IntPtr.Zero;
             }
             if (header != IntPtr.Zero) { Marshal.FreeHGlobal(header); header = IntPtr.Zero; }
@@ -75,7 +75,7 @@ namespace SoulsRevive
         {
             if (result == 0) return;
             var message = new StringBuilder(256);
-            waveOutGetErrorText(result, message, message.Capacity);
+            _ = waveOutGetErrorText(result, message, message.Capacity);
             throw new InvalidOperationException(message.ToString());
         }
 

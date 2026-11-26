@@ -15,8 +15,10 @@ namespace SoulsRevive
             Write(Path.Combine(args[0],"day-night-cycle.gif"),176,delegate(int frame) {
                 double progress=Math.Min(1,frame/159.0);
                 bool sharpening=frame>=8&&frame<120;
+                // The round ends at frame 159; the knight then sinks to one knee over KneelFrames frames.
+                int kneel=Math.Max(0,Math.Min(PixelArt.KneelFrames,frame-158));
                 return PixelArt.Scene(1-progress,false,frame,5.5+15*progress,false,
-                    sharpening?WorkAction.Sharpen:WorkAction.Idle,sharpening?frame-8:0);
+                    sharpening?WorkAction.Sharpen:WorkAction.Idle,sharpening?frame-8:0,kneel);
             });
             Write(Path.Combine(args[0],"solaire-chill.gif"),PixelArt.TavernArrivalFrames+128,
                 delegate(int frame) {return PixelArt.Tavern(frame);});

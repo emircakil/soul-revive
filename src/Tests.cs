@@ -20,7 +20,7 @@ namespace SoulsRevive
             Directory.CreateDirectory(output);string failure=Path.Combine(output,"failure.txt");if(File.Exists(failure))File.Delete(failure);
             Storage.DirectoryPath=Path.Combine(output,"persistence-"+Guid.NewGuid().ToString("N"));
             var p=new Preferences();var e=new TimerEngine(p);int due=0,revived=0;
-            e.Changed+=delegate(string s){if(s=="due")due++;if(s=="revived")revived++;};
+            e.Changed+=delegate(TimerEvent s){if(s==TimerEvent.Due)due++;if(s==TimerEvent.Revived)revived++;};
             Check(Near(DayCycle.Hour(p),5.5),"work begins at dawn");
             for(int i=0;i<1800;i++)e.Advance(1);
             Check(e.Due&&due==1&&e.Health==0,"work reaches zero and notifies once");
@@ -42,8 +42,9 @@ namespace SoulsRevive
             e.ApplyDurations(45,5);Check(p.Remaining==2700&&!p.InBreak,"duration change resets cycle");
             p.Paused=true;e.ApplyDurations(45,5);Check(p.Paused,"unrelated settings preserve pause");
             p.Day="2000-01-01";p.TodayWorkSeconds=900;p.CheckDay();Check(p.Breaks==0&&p.MovementSeconds==0&&p.TodayWorkSeconds==0&&p.TotalWorkSeconds==before,"daily rollover preserves lifetime work");
-            p.Paused=false;p.Day=DateTime.Today.AddDays(-1).ToString("yyyy-MM-dd");e.Advance(.5,DateTime.Today.AddMilliseconds(100));
+            p.Paused=false;p.Day=Preferences.DayKey(DateTime.Today.AddDays(-1));e.Advance(.5,DateTime.Today.AddMilliseconds(100));
             Check(Near(p.TodayWorkSeconds,.1)&&Near(p.TotalWorkSeconds,before+.5),"midnight tick apportions daily and lifetime totals");
+            Check(Near(p.WorkOn(DateTime.Today.AddDays(-1)),.4),"pre-midnight part of a tick is kept in yesterday's history");
             p.WorkMinutes=0;p.BreakMinutes=999;p.Remaining=double.NaN;p.FireVolume=-9;p.MusicVolume=999;p.TotalWorkSeconds=double.PositiveInfinity;p.Validate();
             Check(p.WorkMinutes==1&&p.BreakMinutes==30&&p.Remaining==60&&p.FireVolume==0&&p.MusicVolume==100&&p.TotalWorkSeconds==0,"invalid settings constrained");
             using(var ms=new MemoryStream(Encoding.UTF8.GetBytes("{\"WorkMinutes\":30,\"BreakMinutes\":3,\"Remaining\":900,\"Breaks\":2}")))
@@ -59,7 +60,7 @@ namespace SoulsRevive
             Check(loaded.TotalWorkSeconds == 15000 && loaded.TodayWorkSeconds == 321, "statistics survive complete settings recovery");
             loaded.TotalWorkSeconds = 0; loaded.TodayWorkSeconds = 0;
             Check(Storage.Save(loaded) && loaded.TotalWorkSeconds == 15000 && loaded.TodayWorkSeconds == 321, "saving reset preferences cannot erase accumulated work");
-            loaded.Day = DateTime.Today.AddDays(-1).ToString("yyyy-MM-dd");
+            loaded.Day = Preferences.DayKey(DateTime.Today.AddDays(-1));
             Storage.Save(loaded);
             Check(Storage.Load().TodayWorkSeconds == 321, "same-day restart restores daily work");
             File.WriteAllText(Storage.SettingsPath, "broken settings");
@@ -269,20 +270,18 @@ namespace SoulsRevive
             }
             foreach(bool light in new[]{false,true})foreach(string lang in new[]{"tr","en"})
             {
-                var pref=new Preferences{Language=lang,LightMode=light,Day=DateTime.Now.ToString("yyyy-MM-dd"),TotalWorkSeconds=14736,TodayWorkSeconds=7524,CompletedSessions=8,Breaks=3};
+                var pref=new Preferences{Language=lang,LightMode=light,Day=Preferences.DayKey(DateTime.Now),TotalWorkSeconds=14736,TodayWorkSeconds=7524,CompletedSessions=8,Breaks=3,DailyGoalMinutes=120,History=SampleHistory()};
                 string suffix=(light?"lit-":"dark-")+lang;
                 using(var form=new Companion(pref,true))Render(form,output,"main-"+suffix);
                 using(var developer=new DeveloperDialog())
                 {
                     developer.Preview.Playing=false;developer.Show();Application.DoEvents();
-                    foreach(Control control in developer.Controls)
-                    {if(control is PixelCombo && control.Left==150)((PixelCombo)control).SelectedIndex=1;if(control is PixelSlider)((PixelSlider)control).Value=26;}
-                    foreach(Control control in developer.Controls)if(control is EmberButton && control.Left==358)((EmberButton)control).PerformClick();
+                    developer.AnimationChoice.SelectedIndex=1;developer.Timeline.Value=26;developer.NextFrameButton.PerformClick();
                     Check(developer.Preview.Frame==27,"developer next-frame button changes preview: "+suffix);
                     Render(developer,output,"developer-"+suffix);
                 }
-                using(var dialog=new SettingsDialog(pref))for(int tab=0;tab<4;tab++){dialog.ShowSection(tab);Render(dialog,output,"settings-"+tab+"-"+suffix);}
-                using(var dialog=new StatsDialog(pref))
+                using(var dialog=new SettingsDialog(pref)){Check(dialog.SectionCount==5,"settings has five sections");for(int tab=0;tab<dialog.SectionCount;tab++){dialog.ShowSection(tab);Render(dialog,output,"settings-"+tab+"-"+suffix);}}
+                using(var dialog=new StatsDialog(pref,delegate{}))
                 {
                     bool separated=true;
                     foreach(System.Windows.Forms.Control a in dialog.Controls)
@@ -294,9 +293,77 @@ namespace SoulsRevive
                 pref.InBreak=true;pref.Remaining=180;using(var form=new Companion(pref,true))Render(form,output,"break-"+suffix);
                 pref.InBreak=false;pref.Chill=true;using(var form=new Companion(pref,true))Render(form,output,"chill-"+suffix);
             }
+            using(var full=PixelArt.Scene(1,false,0,12,false))using(var low=PixelArt.Scene(.15,false,0,12,false))
+                Check(CountColor(full,"#FFD48B")>CountColor(low,"#FFD48B")&&CountColor(low,"#A24628")>0,"bonfire burns lower as the round runs out");
+            using(var standing=PixelArt.Scene(0,false,0,20.5,false,WorkAction.Idle,0,0))using(var sinking=PixelArt.Scene(0,false,0,20.5,false,WorkAction.Idle,0,2))using(var knelt=PixelArt.Scene(0,false,0,20.5,false,WorkAction.Idle,0,PixelArt.KneelFrames))using(var still=PixelArt.Scene(0,false,0,20.5,false))
+            {Check(!SamePixels(standing,sinking)&&!SamePixels(sinking,knelt)&&SamePixels(knelt,still),"knight sinks to one knee instead of snapping");sinking.Save(Path.Combine(output,"kneel-sinking.png"));}
+            using(var landed=PixelArt.Scene(1,false,0,12,false,WorkAction.TendFire,74))using(var gone=PixelArt.Scene(1,false,0,12,false,WorkAction.TendFire,88))
+                Check(HasColor(landed,ColorTranslator.FromHtml("#2A1A16"))&&!HasColor(gone,ColorTranslator.FromHtml("#2A1A16")),"thrown log burns away in the fire");
             Theme.Light=false;L.Language="tr";using(var setup=new SetupDialog())Render(setup,output,"setup");
+            RunFeatureChecks(output);
             Check(PixelFont.Family.Name=="VT323","bundled pixel font loaded without system installation");
             report.AppendLine(count+" checks passed.");File.WriteAllText(Path.Combine(output,"results.txt"),report.ToString());
+        }
+        static System.Collections.Generic.List<DayRecord> SampleHistory()
+        {
+            var list=new System.Collections.Generic.List<DayRecord>();
+            int[] minutes={95,140,0,180,60,130};
+            for(int i=0;i<minutes.Length;i++)list.Add(new DayRecord{Day=Preferences.DayKey(DateTime.Today.AddDays(i-6)),WorkSeconds=minutes[i]*60});
+            return list;
+        }
+        static void RunFeatureChecks(string output)
+        {
+            var now=new DateTime(2026,3,10,15,0,0);
+            // Snooze: five more minutes without counting the round twice.
+            var p=new Preferences{WorkMinutes=10,BreakMinutes=2};var e=new TimerEngine(p);p.CheckDay(now);int due=0;e.Changed+=delegate(TimerEvent r){if(r==TimerEvent.Due)due++;};
+            for(int i=0;i<600;i++)e.Advance(1,now);
+            Check(e.Due&&due==1&&Ui.SecondaryAction(e).Contains("5"),"expired round offers a snooze");
+            Ui.RunSecondary(e);Check(!e.Due&&p.Remaining==300&&p.Snoozed,"snooze grants five more minutes");
+            for(int i=0;i<300;i++)e.Advance(1,now);
+            Check(e.Due&&due==2&&p.CompletedSessions==1&&p.TodaySessions==1,"snoozed round reminds again but is counted once");
+            e.BeginBreak();Check(!p.Snoozed&&p.InBreak,"break clears snooze");
+            // Long break on every third break.
+            p=new Preferences{WorkMinutes=1,BreakMinutes=1,LongBreakEvery=3,LongBreakMinutes=4};e=new TimerEngine(p);p.CheckDay(now);
+            for(int round=0;round<3;round++)
+            {
+                for(int i=0;i<60;i++)e.Advance(1,now);
+                bool expectLong=round==2;Check(e.NextBreakIsLong==expectLong,"long break announced on round "+(round+1));
+                e.BeginBreak();Check(p.InLongBreak==expectLong&&p.Remaining==(expectLong?240:60),"break length for round "+(round+1));
+                for(int i=0;i<(expectLong?240:60);i++)e.Advance(1,now);
+            }
+            Check(p.BreaksSinceLongBreak==0&&p.Breaks==3&&!p.InBreak,"long break resets the cycle");
+            // Idle pause removes the idle minutes from the timer and statistics.
+            p=new Preferences{WorkMinutes=30,IdlePause=true,IdleMinutes=5};e=new TimerEngine(p);p.CheckDay(now);
+            for(int i=0;i<900;i++)e.Advance(1,now);
+            Check(e.PauseForIdle(360,now)&&p.Paused&&Near(p.Remaining,900+360)&&Near(p.TotalWorkSeconds,540)&&Near(p.TodayWorkSeconds,540),"idle time is rolled back and the timer pauses");
+            Check(!e.PauseForIdle(360,now),"idle check does nothing while paused");
+            // Daily history, goal and streak.
+            p=new Preferences{DailyGoalMinutes=60};p.Day=Preferences.DayKey(now.AddDays(-2));p.TodayWorkSeconds=4000;p.TodaySessions=2;
+            p.CheckDay(now.AddDays(-1));p.TodayWorkSeconds=3700;p.CheckDay(now);p.TodayWorkSeconds=100;
+            Check(p.History.Count==2&&Near(p.WorkOn(now.AddDays(-2)),4000)&&p.History[0].Sessions==2,"day rollover archives history");
+            Check(p.Streak(now)==2,"streak counts finished days while today is in progress");
+            p.TodayWorkSeconds=3600;Check(p.Streak(now)==3,"streak includes today once the goal is met");
+            Check(Ui.WeekSeconds(p,now)[6]==3600&&Ui.WeekSeconds(p,now)[4]==4000&&Ui.WeekLabels(now).Length==7,"week chart data ends today");
+            var many=new System.Collections.Generic.List<DayRecord>();for(int i=0;i<90;i++)many.Add(new DayRecord{Day=Preferences.DayKey(now.AddDays(-i-1)),WorkSeconds=60});
+            p.History=many;p.Validate();Check(p.History.Count==Preferences.HistoryDays,"history keeps a bounded number of days");
+            // Reset is authoritative and survives a restart, including backups.
+            Storage.DirectoryPath=Path.Combine(output,"reset-"+Guid.NewGuid().ToString("N"));
+            p=new Preferences{TotalWorkSeconds=5000,TodayWorkSeconds=600,CompletedSessions=4};e=new TimerEngine(p);Storage.Save(p);Storage.Save(p);
+            e.ResetStatistics();Check(Storage.Save(p,true),"reset saves");
+            var reloaded=Storage.Load();Check(reloaded.TotalWorkSeconds==0&&reloaded.TodayWorkSeconds==0&&reloaded.CompletedSessions==0,"reset statistics stay reset after restart");
+            p.TotalWorkSeconds=10;Storage.Save(p);Check(Storage.Load().TotalWorkSeconds==10,"same instance may save lower totals after its own reset");
+            // Shared text and formats.
+            L.Language="tr";Check(Ui.LongDuration(3723)=="1 sa 2 dk 3 sn"&&Ui.Duration(3723)=="01:02:03"&&Ui.TimeText(59.2)=="01:00","shared Turkish formats");
+            L.Language="en";Check(Ui.LongDuration(3723)=="1h 2m 3s","shared English formats");
+            var breakPreferences=new Preferences();var breakEngine=new TimerEngine(breakPreferences);breakEngine.BeginBreak();
+            Check(Ui.PrimaryAction(breakEngine)=="Return to work","break button says it returns to work");
+            Check(Preferences.DayKey(new DateTime(2026,1,2))=="2026-01-02","day keys are culture independent");
+            // Loops are seamless: the jump from the last to the first sample is as small as any other step.
+            short[] loop=SoundSynth.RenderSamples(60,60,60,4,true);int largest=0;
+            for(int i=1;i<loop.Length;i++)largest=Math.Max(largest,Math.Abs(loop[i]-loop[i-1]));
+            Check(Math.Abs(loop[0]-loop[loop.Length-1])<=Math.Max(2000,largest),"soundscape loop has no seam");
+            Check(Math.Abs((int)loop[0])>0||Math.Abs((int)loop[1])>0,"soundscape loop does not start with a silent fade");
+            L.Language="tr";
         }
         static bool Equal(byte[] a,byte[] b) {if(a.Length!=b.Length)return false;for(int i=0;i<a.Length;i++)if(a[i]!=b[i])return false;return true;}
         public static void RunAudio(string output)
@@ -340,6 +407,7 @@ namespace SoulsRevive
             }
             Check(true, name);
         }
+        static int CountColor(Bitmap image,string hex) {int argb=ColorTranslator.FromHtml(hex).ToArgb(),n=0;for(int y=0;y<image.Height;y++)for(int x=0;x<image.Width;x++)if(image.GetPixel(x,y).ToArgb()==argb)n++;return n;}
         static bool HasColor(Bitmap image,Color color) {for(int y=0;y<image.Height;y++)for(int x=0;x<image.Width;x++)if(image.GetPixel(x,y).ToArgb()==color.ToArgb())return true;return false;}
         static bool SamePixels(Bitmap a,Bitmap b) {return a.Size==b.Size&&SamePixels(a,b,new Rectangle(Point.Empty,a.Size));}
         static bool SamePixels(Bitmap a,Bitmap b,Rectangle area) {for(int y=area.Top;y<area.Bottom;y++)for(int x=area.Left;x<area.Right;x++)if(a.GetPixel(x,y)!=b.GetPixel(x,y))return false;return true;}

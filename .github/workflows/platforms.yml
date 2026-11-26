@@ -1,28 +1,40 @@
 name: Native platform builds
 on:
   workflow_call:
+    secrets:
+      WINDOWS_SIGNING_PFX:
+        required: false
+      WINDOWS_SIGNING_PASSWORD:
+        required: false
 permissions:
   contents: read
 jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: '10.0.x'
       - name: Build and verify Windows app
         shell: pwsh
+        env:
+          # Optional Authenticode signing; unsigned when these secrets are not configured.
+          SOULREVIVE_SIGN_PFX: ${{ secrets.WINDOWS_SIGNING_PFX }}
+          SOULREVIVE_SIGN_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
         run: |
           ./build.ps1
           ./verify.ps1
           $version = ([Diagnostics.FileVersionInfo]::GetVersionInfo("$PWD/bin/SoulsRevive.exe")).FileVersion
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne ('v' + ([version]$version).ToString(3))) { throw 'Release tag and app version differ.' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-windows
           path: |
             bin/SoulsRevive.exe
             bin/SoulRevive-Setup.exe
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: checks-windows
@@ -46,8 +58,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: '10.0.x'
       - name: Linux graphics and audio dependencies
@@ -71,13 +83,14 @@ jobs:
           'test-output/install source/soul-revive-linux-x64/install.sh'
           desktop-file-validate "$XDG_DATA_HOME/applications/soulrevive.desktop"
           "$XDG_DATA_HOME/soul-revive/app/SoulsRevive" --self-test "$PWD/test-output/installed"
+          desktop-file-validate "$PWD/test-output/installed/autostart.desktop"
           xvfb-run -a "$XDG_DATA_HOME/soul-revive/app/SoulsRevive" --profile "$PWD/test-output/installed-ui" --smoke-test "$PWD/test-output/installed.png"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-${{ matrix.package }}
           path: bin/soul-revive-${{ matrix.package }}.tar.gz
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: checks-${{ matrix.package }}

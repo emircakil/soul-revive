@@ -1,0 +1,30 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{sh,yml,yaml}]
+end_of_line = lf
+indent_size = 2
+
+[*.{csproj,props,targets,xml,json}]
+indent_size = 2
+
+[*.cs]
+max_line_length = 160
+csharp_new_line_before_open_brace = all
+csharp_prefer_braces = when_multiline:suggestion
+csharp_style_var_for_built_in_types = true:silent
+csharp_style_var_when_type_is_apparent = true:silent
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_around_binary_operators = before_and_after
+dotnet_sort_system_directives_first = true
+# One statement per line keeps diffs and reviews readable.
+csharp_preserve_single_line_statements = false
+csharp_preserve_single_line_blocks = true
+dotnet_style_qualification_for_field = false:silent

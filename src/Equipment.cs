@@ -42,10 +42,10 @@ namespace SoulsRevive
             if(Equipped.Armor==1)return DayCycle.Blend(Color.FromArgb(19,23,32),Color.FromArgb(139,154,176),brightness);
             return DayCycle.Blend(Color.FromArgb(51,35,28),Color.FromArgb(244,208,140),brightness);
         }
-        internal static Bitmap EquipmentScene(KnightEquipment equipment,double health,bool rest,int frame,double hour,bool chill,WorkAction action,int actionFrame)
+        internal static Bitmap EquipmentScene(KnightEquipment equipment,double health,bool rest,int frame,double hour,bool chill,WorkAction action,int actionFrame,int kneel=-1)
         {
             var previous=Equipped;
-            try {Equipped=equipment;return Scene(health,rest,frame,hour,chill,action,actionFrame);}
+            try {Equipped=equipment;return Scene(health,rest,frame,hour,chill,action,actionFrame,kneel);}
             finally {Equipped=previous;}
         }
         static void DrawEquippedShield(Graphics g)
